@@ -6,9 +6,9 @@
     </linearGradient>
   </defs>
   <rect width="200" height="200" rx="40" fill="url(#g)"/>
-  <text x="100" y="155"
+  <text x="100" y="152"
         text-anchor="middle"
         font-family="'Helvetica Neue',Arial,sans-serif"
-        font-size="150" font-weight="800"
+        font-size="148" font-weight="800"
         fill="white">A</text>
 </svg>
