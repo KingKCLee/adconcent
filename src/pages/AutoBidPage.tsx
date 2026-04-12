@@ -98,7 +98,6 @@ export function AutoBidPage() {
   const [loadingLogs, setLoadingLogs] = useState(false);
 
   const loadKeywords = async () => {
-    if (isFree) return;
     setLoadingKw(true);
     try {
       const data = await workerFetch<{ keywords?: KeywordStat[] } | KeywordStat[]>(
@@ -115,7 +114,6 @@ export function AutoBidPage() {
   };
 
   const loadLogs = async () => {
-    if (isFree) return;
     setLoadingLogs(true);
     try {
       const data = await workerFetch<{ logs?: BidLog[] } | BidLog[]>(
@@ -143,7 +141,8 @@ export function AutoBidPage() {
   };
 
   const runOptimizer = async (dryRun: boolean) => {
-    if (isFree) {
+    // Free 플랜은 미리보기(dryRun)만 허용
+    if (isFree && !dryRun) {
       setShowUpgrade(true);
       return;
     }
@@ -178,6 +177,10 @@ export function AutoBidPage() {
   };
 
   const toggleActive = async (kw: KeywordStat) => {
+    if (isFree) {
+      setShowUpgrade(true);
+      return;
+    }
     if (!kw.bid_setting_id) return;
     const next = kw.is_active ? 0 : 1;
     setKeywords((prev) =>
@@ -195,6 +198,10 @@ export function AutoBidPage() {
   };
 
   const deleteSetting = async (kw: KeywordStat) => {
+    if (isFree) {
+      setShowUpgrade(true);
+      return;
+    }
     if (!kw.bid_setting_id) return;
     if (!confirm(`"${kw.keyword}" 자동입찰 설정을 삭제하시겠습니까?`)) return;
     try {
@@ -273,12 +280,18 @@ export function AutoBidPage() {
           onAdd={() => (isFree ? setShowUpgrade(true) : setShowAdd(true))}
           onRun={() => runOptimizer(false)}
           onPreview={() => runOptimizer(true)}
-          onEdit={(kw) => setEditTarget(kw)}
+          onEdit={(kw) => (isFree ? setShowUpgrade(true) : setEditTarget(kw))}
           onDelete={deleteSetting}
           onToggle={toggleActive}
         />
       ) : (
-        <LogsTab logs={logs} loading={loadingLogs} summary={todaySummary} />
+        <LogsTab
+          logs={logs}
+          loading={loadingLogs}
+          summary={todaySummary}
+          isFree={isFree}
+          onUpgrade={() => setShowUpgrade(true)}
+        />
       )}
 
       {/* Add modal */}
@@ -354,36 +367,62 @@ function KeywordsTab(props: {
   const { keywords, loading, running, previewing, isFree, onAdd, onRun, onPreview, onEdit, onDelete, onToggle } = props;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200">
-      {/* Action bar */}
-      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
-        <h3 className="font-semibold text-gray-900">키워드 자동입찰 ({keywords.length}개)</h3>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onPreview}
-            disabled={previewing || isFree}
-            className="flex items-center gap-1.5 text-xs px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50"
-          >
-            {previewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
-            미리보기
-          </button>
-          <button
-            onClick={onRun}
-            disabled={running || isFree}
-            className="flex items-center gap-1.5 text-xs px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-          >
-            {running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-            지금 실행
-          </button>
-          <button
-            onClick={onAdd}
-            className="flex items-center gap-1.5 text-xs px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            키워드 추가
-          </button>
+    <div className="space-y-4">
+      {isFree && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-start gap-3">
+          <Eye className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+          <div className="text-sm text-blue-900 leading-relaxed">
+            현재 광고 현황을 확인하고 있습니다.
+            <br />
+            <span className="text-blue-700">자동입찰을 실행하려면 Starter 플랜으로 업그레이드하세요.</span>
+          </div>
         </div>
-      </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-200">
+        {/* Action bar */}
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+          <h3 className="font-semibold text-gray-900">키워드 자동입찰 ({keywords.length}개)</h3>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onPreview}
+              disabled={previewing}
+              className="flex items-center gap-1.5 text-xs px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+            >
+              {previewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
+              미리보기
+            </button>
+            <button
+              onClick={onRun}
+              disabled={running}
+              className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg disabled:opacity-50 ${
+                isFree
+                  ? 'bg-gray-200 text-gray-500 hover:bg-gray-300'
+                  : 'bg-green-600 text-white hover:bg-green-700'
+              }`}
+            >
+              {running ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : isFree ? (
+                <Lock className="w-3.5 h-3.5" />
+              ) : (
+                <Zap className="w-3.5 h-3.5" />
+              )}
+              지금 실행
+            </button>
+            <button
+              onClick={onAdd}
+              className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg ${
+                isFree
+                  ? 'bg-gray-200 text-gray-500 hover:bg-gray-300'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              {isFree ? <Lock className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+              키워드 추가
+            </button>
+          </div>
+        </div>
 
       {loading ? (
         <div className="p-12 text-center text-sm text-gray-400">
@@ -440,13 +479,14 @@ function KeywordsTab(props: {
                       {hasSetting ? (
                         <button
                           onClick={() => onToggle(kw)}
+                          title={isFree ? '자동입찰은 Starter부터' : ''}
                           className={`relative inline-flex items-center w-9 h-5 rounded-full transition-colors ${
-                            isActive ? 'bg-blue-600' : 'bg-gray-300'
+                            isFree ? 'bg-gray-300 cursor-not-allowed' : isActive ? 'bg-blue-600' : 'bg-gray-300'
                           }`}
                         >
                           <span
                             className={`inline-block w-3.5 h-3.5 bg-white rounded-full shadow transform transition-transform ${
-                              isActive ? 'translate-x-[18px]' : 'translate-x-[3px]'
+                              !isFree && isActive ? 'translate-x-[18px]' : 'translate-x-[3px]'
                             }`}
                           />
                         </button>
@@ -458,16 +498,24 @@ function KeywordsTab(props: {
                       <div className="inline-flex items-center gap-1">
                         <button
                           onClick={() => onEdit(kw)}
-                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
-                          title="수정"
+                          className={`p-1.5 rounded ${
+                            isFree
+                              ? 'text-gray-300 hover:text-gray-500 hover:bg-gray-100'
+                              : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
+                          }`}
+                          title={isFree ? '자동입찰은 Starter부터' : '수정'}
                         >
-                          <Pencil className="w-3.5 h-3.5" />
+                          {isFree ? <Lock className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
                         </button>
                         {hasSetting && (
                           <button
                             onClick={() => onDelete(kw)}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
-                            title="삭제"
+                            className={`p-1.5 rounded ${
+                              isFree
+                                ? 'text-gray-300 hover:text-gray-500 hover:bg-gray-100'
+                                : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                            }`}
+                            title={isFree ? '자동입찰은 Starter부터' : '삭제'}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -481,6 +529,7 @@ function KeywordsTab(props: {
           </table>
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -491,8 +540,12 @@ function LogsTab(props: {
   logs: BidLog[];
   loading: boolean;
   summary: { count: number; saved: number; raised: number };
+  isFree: boolean;
+  onUpgrade: () => void;
 }) {
-  const { logs, loading, summary } = props;
+  const { logs, loading, summary, isFree, onUpgrade } = props;
+  const visibleLogs = isFree ? logs.slice(0, 3) : logs;
+  const blurredLogs = isFree ? logs.slice(3, 8) : [];
 
   const cards = [
     { label: '오늘 조정 건수', value: `${summary.count}건`, icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-50' },
@@ -542,7 +595,7 @@ function LogsTab(props: {
                 </tr>
               </thead>
               <tbody>
-                {logs.map((l) => {
+                {visibleLogs.map((l) => {
                   const delta = (l.new_bid ?? 0) - (l.prev_bid ?? 0);
                   const up = delta > 0;
                   const down = delta < 0;
@@ -569,8 +622,36 @@ function LogsTab(props: {
                     </tr>
                   );
                 })}
+                {isFree &&
+                  blurredLogs.map((l) => (
+                    <tr key={`blur-${l.id}`} className="border-b border-gray-50" style={{ filter: 'blur(4px)', userSelect: 'none' }}>
+                      <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                        {(l.created_at ?? '').replace('T', ' ').slice(0, 16)}
+                      </td>
+                      <td className="px-3 py-3 font-medium text-gray-800">{l.keyword}</td>
+                      <td className="px-3 py-3 text-right text-gray-600">{won(l.prev_bid)}</td>
+                      <td className="px-3 py-3 text-right text-gray-900 font-semibold">{won(l.new_bid)}</td>
+                      <td className="px-3 py-3 text-right text-gray-500">-</td>
+                      <td className="px-3 py-3 text-center text-xs text-gray-500">-</td>
+                      <td className="px-3 py-3 text-xs text-gray-500">{l.strategy}</td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
+          </div>
+        )}
+        {isFree && logs.length > 3 && (
+          <div className="px-5 py-4 border-t border-gray-100 bg-gradient-to-r from-blue-50 to-violet-50 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm text-gray-700">
+              <Lock className="w-4 h-4 text-blue-600" />
+              전체 이력은 Starter 플랜부터 확인할 수 있습니다
+            </div>
+            <button
+              onClick={onUpgrade}
+              className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700"
+            >
+              업그레이드
+            </button>
           </div>
         )}
       </div>
