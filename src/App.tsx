@@ -4,6 +4,8 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { LandingPage } from '@/pages/LandingPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { SignupPage } from '@/pages/SignupPage';
+import { TermsPage } from '@/pages/TermsPage';
+import { PrivacyPage } from '@/pages/PrivacyPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { ClickFraudPage } from '@/pages/ClickFraudPage';
 import { AutoBidPage } from '@/pages/AutoBidPage';
@@ -23,6 +25,8 @@ export default function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
 
         <Route element={<PrivateRoute />}>
           <Route element={<DashboardLayout />}>

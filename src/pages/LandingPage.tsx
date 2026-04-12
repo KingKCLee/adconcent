@@ -131,6 +131,7 @@ export function LandingPage() {
           <p className="text-sm text-gray-500">&copy; 2026 AdConcent. All rights reserved.</p>
           <div className="text-xs text-gray-500 leading-relaxed">
             <p>상호명: 더블유부동산 | 대표자: 이광철 | 사업자등록번호: 589-24-01721</p>
+            <p>통신판매업 신고번호: 제2025-인천부평-0992호</p>
             <p>사업장 주소: 인천광역시 연수구 먼우금로222번길 37 (연수동)</p>
             <p>대표 전화: 010-9298-8896 | 이메일: noble.kclee@gmail.com</p>
           </div>
