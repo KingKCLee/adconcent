@@ -1,11 +1,33 @@
 import { Link } from 'react-router-dom';
-import { Shield, TrendingUp, BarChart3, Zap } from 'lucide-react';
+import { Shield, TrendingUp, BarChart3, Zap, Check, Sparkles } from 'lucide-react';
 
 const features = [
   { icon: Shield, title: '부정클릭 차단', desc: 'AI가 실시간으로 부정클릭을 탐지하고 자동으로 IP를 차단합니다.' },
   { icon: TrendingUp, title: '자동 입찰', desc: '목표 CPA에 맞춰 키워드별 입찰가를 자동으로 최적화합니다.' },
   { icon: BarChart3, title: '성과 분석', desc: '클릭, 전환, 비용을 한눈에 파악하고 AI 인사이트를 제공합니다.' },
   { icon: Zap, title: '실시간 보호', desc: '10분마다 의심 IP를 집계하여 네이버 광고에 자동 반영합니다.' },
+];
+
+const plans = [
+  {
+    name: 'Starter',
+    price: '9,900',
+    color: 'blue',
+    features: ['IP 차단 무제한', 'AI 분석 월 30회', '자동입찰 키워드 50개', '환급 CSV 다운로드'],
+  },
+  {
+    name: 'Growth',
+    price: '24,900',
+    color: 'violet',
+    badge: '추천',
+    features: ['Starter 전부 포함', '구글 광고 연동', '키워드 자동 확장', 'AI 주간 리포트'],
+  },
+  {
+    name: 'Pro',
+    price: '49,900',
+    color: 'gray',
+    features: ['Growth 전부 포함', 'Meta · YouTube 연동', 'AI 분석 무제한', '다중 사이트 (5개)'],
+  },
 ];
 
 export function LandingPage() {
@@ -45,8 +67,79 @@ export function LandingPage() {
         </div>
       </section>
 
-      <footer className="border-t border-gray-100 py-8 text-center text-sm text-gray-500">
-        &copy; 2026 AdConcent. All rights reserved.
+      {/* Pricing */}
+      <section id="pricing" className="max-w-6xl mx-auto px-6 py-16 border-t border-gray-100">
+        <div className="text-center mb-10">
+          <h2 className="text-3xl font-bold text-gray-900 mb-3">요금제</h2>
+          <p className="text-gray-600">광고 규모에 맞는 플랜을 선택하세요</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {plans.map((plan) => {
+            const isHighlighted = plan.color === 'violet';
+            return (
+              <div
+                key={plan.name}
+                className={`bg-white rounded-xl p-7 relative ${
+                  isHighlighted ? 'border-2 border-violet-500 shadow-lg' : 'border border-gray-200'
+                }`}
+              >
+                {plan.badge && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <span className="bg-violet-600 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" />
+                      {plan.badge}
+                    </span>
+                  </div>
+                )}
+                <div className="mb-5">
+                  <h4 className="text-xl font-bold text-gray-900 mb-2">{plan.name}</h4>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-4xl font-bold text-gray-900">{plan.price}</span>
+                    <span className="text-sm text-gray-500">원/월</span>
+                  </div>
+                </div>
+                <ul className="space-y-3 mb-6">
+                  {plan.features.map((f, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                      <Check className={`w-4 h-4 shrink-0 mt-0.5 ${
+                        plan.color === 'violet' ? 'text-violet-600' :
+                        plan.color === 'blue' ? 'text-blue-600' :
+                        'text-gray-600'
+                      }`} />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Link
+                  to="/signup"
+                  className={`block text-center w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+                    plan.color === 'violet' ? 'bg-violet-600 text-white hover:bg-violet-700' :
+                    plan.color === 'blue' ? 'bg-blue-600 text-white hover:bg-blue-700' :
+                    'bg-gray-900 text-white hover:bg-gray-800'
+                  }`}
+                >
+                  무료로 시작하기
+                </Link>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <footer className="border-t border-gray-100 py-10">
+        <div className="max-w-6xl mx-auto px-6 text-center space-y-3">
+          <p className="text-sm text-gray-500">&copy; 2026 AdConcent. All rights reserved.</p>
+          <div className="text-xs text-gray-500 leading-relaxed">
+            <p>상호명: 더블유부동산 | 대표자: 이광철 | 사업자등록번호: 589-24-01721</p>
+            <p>사업장 주소: 인천광역시 연수구 먼우금로222번길 37 (연수동)</p>
+            <p>대표 전화: 010-9298-8896 | 이메일: noble.kclee@gmail.com</p>
+          </div>
+          <div className="flex items-center justify-center gap-4 text-xs text-gray-500 pt-2">
+            <Link to="/terms" className="hover:text-gray-700">이용약관</Link>
+            <span>·</span>
+            <Link to="/privacy" className="hover:text-gray-700">개인정보처리방침</Link>
+          </div>
+        </div>
       </footer>
     </div>
   );
