@@ -1,22 +1,38 @@
-import { Check, Sparkles } from 'lucide-react';
+import { Check, Sparkles, X } from 'lucide-react';
 
 const usage = [
-  { label: 'IP 차단', current: 1, max: 5 },
-  { label: 'AI 분석', current: 0, max: 3 },
-  { label: '키워드', current: 0, max: 10 },
+  { label: 'IP 차단', current: 1, max: 3 },
+  { label: 'AI 분석', current: 0, max: 1 },
+  { label: '클릭 로그', current: 3, max: 3, unit: '일' },
 ];
 
 const plans = [
+  {
+    name: 'Free',
+    price: '0',
+    color: 'gray',
+    features: [
+      { text: '부정클릭 탐지 (무제한)', has: true },
+      { text: 'IP 차단 월 3개', has: true },
+      { text: 'AI 분석 월 1회', has: true },
+      { text: '클릭 로그 3일', has: true },
+      { text: '자동입찰', has: false },
+      { text: '환급 CSV', has: false },
+      { text: '구글·Meta 연동', has: false },
+    ],
+    current: true,
+  },
   {
     name: 'Starter',
     price: '9,900',
     color: 'blue',
     features: [
-      'IP 차단 무제한',
-      'AI 분석 월 30회',
-      '자동입찰 키워드 50개',
-      '환급 CSV 다운로드',
-      '이메일 지원',
+      { text: 'IP 차단 무제한', has: true },
+      { text: 'AI 분석 월 30회', has: true },
+      { text: '자동입찰 키워드 50개', has: true },
+      { text: '클릭 로그 90일', has: true },
+      { text: '환급 CSV 다운로드', has: true },
+      { text: '이메일 지원', has: true },
     ],
   },
   {
@@ -25,23 +41,23 @@ const plans = [
     color: 'violet',
     badge: '추천',
     features: [
-      'Starter 전부 포함',
-      '구글 광고 연동',
-      '키워드 자동 확장',
-      '통합 실적 분석',
-      'AI 주간 리포트',
+      { text: 'Starter 전부 포함', has: true },
+      { text: '구글 광고 연동', has: true },
+      { text: '키워드 자동 확장', has: true },
+      { text: '통합 실적 분석', has: true },
+      { text: 'AI 주간 리포트', has: true },
     ],
   },
   {
     name: 'Pro',
     price: '49,900',
-    color: 'gray',
+    color: 'gray-dark',
     features: [
-      'Growth 전부 포함',
-      'Meta · YouTube 연동',
-      'AI 분석 무제한',
-      '다중 사이트 (최대 5개)',
-      '대행사 멀티계정 관리',
+      { text: 'Growth 전부 포함', has: true },
+      { text: 'Meta · YouTube 연동', has: true },
+      { text: 'AI 분석 무제한', has: true },
+      { text: '다중 사이트 (최대 5개)', has: true },
+      { text: '대행사 멀티계정 관리', has: true },
     ],
   },
 ];
@@ -54,7 +70,7 @@ const faqs = [
 
 export function BillingPage() {
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-6 max-w-7xl">
       {/* Current plan */}
       <section className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-5">
@@ -67,16 +83,22 @@ export function BillingPage() {
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {usage.map(({ label, current, max }) => {
+          {usage.map(({ label, current, max, unit }) => {
             const pct = (current / max) * 100;
+            const isFull = pct >= 100;
             return (
               <div key={label} className="bg-gray-50 rounded-lg p-4">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs text-gray-500">{label}</span>
-                  <span className="text-sm font-semibold text-gray-900">{current} / {max}</span>
+                  <span className={`text-sm font-semibold ${isFull ? 'text-red-600' : 'text-gray-900'}`}>
+                    {current} / {max}{unit || '개'}
+                  </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-1.5">
-                  <div className="bg-blue-600 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                  <div
+                    className={`h-1.5 rounded-full transition-all ${isFull ? 'bg-red-500' : 'bg-blue-600'}`}
+                    style={{ width: `${Math.min(pct, 100)}%` }}
+                  />
                 </div>
               </div>
             );
@@ -84,20 +106,23 @@ export function BillingPage() {
         </div>
       </section>
 
-      {/* Plan comparison */}
+      {/* Plans */}
       <section>
         <div className="text-center mb-6">
           <h3 className="text-2xl font-bold text-gray-900 mb-2">플랜 업그레이드</h3>
           <p className="text-sm text-gray-500">광고 규모에 맞는 플랜을 선택하세요</p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
           {plans.map((plan) => {
             const isHighlighted = plan.color === 'violet';
+            const isCurrent = plan.current;
             return (
               <div
                 key={plan.name}
                 className={`bg-white rounded-xl p-6 relative ${
-                  isHighlighted ? 'border-2 border-violet-500 shadow-lg' : 'border border-gray-200'
+                  isHighlighted ? 'border-2 border-violet-500 shadow-lg' :
+                  isCurrent ? 'border-2 border-gray-300' :
+                  'border border-gray-200'
                 }`}
               >
                 {plan.badge && (
@@ -108,31 +133,44 @@ export function BillingPage() {
                     </span>
                   </div>
                 )}
+                {isCurrent && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <span className="bg-gray-600 text-white text-xs font-bold px-3 py-1 rounded-full">현재 플랜</span>
+                  </div>
+                )}
                 <div className="mb-5">
                   <h4 className="text-xl font-bold text-gray-900 mb-2">{plan.name}</h4>
                   <div className="flex items-baseline gap-1">
-                    <span className="text-3xl font-bold text-gray-900">{plan.price}</span>
-                    <span className="text-sm text-gray-500">원/월</span>
+                    <span className="text-3xl font-bold text-gray-900">{plan.price === '0' ? '무료' : plan.price}</span>
+                    {plan.price !== '0' && <span className="text-sm text-gray-500">원/월</span>}
                   </div>
                 </div>
-                <ul className="space-y-3 mb-6">
+                <ul className="space-y-2.5 mb-6 min-h-[180px]">
                   {plan.features.map((f, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                      <Check className={`w-4 h-4 shrink-0 mt-0.5 ${
-                        plan.color === 'violet' ? 'text-violet-600' :
-                        plan.color === 'blue' ? 'text-blue-600' :
-                        'text-gray-600'
-                      }`} />
-                      <span>{f}</span>
+                    <li key={i} className={`flex items-start gap-2 text-sm ${f.has ? 'text-gray-700' : 'text-gray-400 line-through'}`}>
+                      {f.has ? (
+                        <Check className={`w-4 h-4 shrink-0 mt-0.5 ${
+                          plan.color === 'violet' ? 'text-violet-600' :
+                          plan.color === 'blue' ? 'text-blue-600' :
+                          'text-gray-600'
+                        }`} />
+                      ) : (
+                        <X className="w-4 h-4 shrink-0 mt-0.5 text-gray-300" />
+                      )}
+                      <span>{f.text}</span>
                     </li>
                   ))}
                 </ul>
-                <button className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${
-                  plan.color === 'violet' ? 'bg-violet-600 text-white hover:bg-violet-700' :
-                  plan.color === 'blue' ? 'bg-blue-600 text-white hover:bg-blue-700' :
-                  'bg-gray-900 text-white hover:bg-gray-800'
-                }`}>
-                  업그레이드
+                <button
+                  disabled={isCurrent}
+                  className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+                    isCurrent ? 'bg-gray-100 text-gray-400 cursor-not-allowed' :
+                    plan.color === 'violet' ? 'bg-violet-600 text-white hover:bg-violet-700' :
+                    plan.color === 'blue' ? 'bg-blue-600 text-white hover:bg-blue-700' :
+                    'bg-gray-900 text-white hover:bg-gray-800'
+                  }`}
+                >
+                  {isCurrent ? '현재 플랜' : '업그레이드'}
                 </button>
               </div>
             );
