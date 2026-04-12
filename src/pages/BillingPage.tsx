@@ -1,10 +1,160 @@
+import { Check, Sparkles } from 'lucide-react';
+
+const usage = [
+  { label: 'IP 차단', current: 1, max: 5 },
+  { label: 'AI 분석', current: 0, max: 3 },
+  { label: '키워드', current: 0, max: 10 },
+];
+
+const plans = [
+  {
+    name: 'Starter',
+    price: '9,900',
+    color: 'blue',
+    features: [
+      'IP 차단 무제한',
+      'AI 분석 월 30회',
+      '자동입찰 키워드 50개',
+      '환급 CSV 다운로드',
+      '이메일 지원',
+    ],
+  },
+  {
+    name: 'Growth',
+    price: '24,900',
+    color: 'violet',
+    badge: '추천',
+    features: [
+      'Starter 전부 포함',
+      '구글 광고 연동',
+      '키워드 자동 확장',
+      '통합 실적 분석',
+      'AI 주간 리포트',
+    ],
+  },
+  {
+    name: 'Pro',
+    price: '49,900',
+    color: 'gray',
+    features: [
+      'Growth 전부 포함',
+      'Meta · YouTube 연동',
+      'AI 분석 무제한',
+      '다중 사이트 (최대 5개)',
+      '대행사 멀티계정 관리',
+    ],
+  },
+];
+
+const faqs = [
+  { q: '언제든 플랜을 변경할 수 있나요?', a: '네, 언제든 플랜을 업그레이드하거나 다운그레이드할 수 있습니다. 다음 결제일부터 변경된 플랜이 적용됩니다.' },
+  { q: '환불 정책은 어떻게 되나요?', a: '결제 후 7일 이내에는 100% 환불이 가능합니다. 그 이후에는 사용량에 따라 일할 계산되어 환불됩니다.' },
+  { q: 'Free 플랜은 영구적으로 사용 가능한가요?', a: '네, Free 플랜은 계속 무료로 이용 가능합니다. 단, 사용량 제한이 있으며 일부 고급 기능은 제한됩니다.' },
+];
+
 export function BillingPage() {
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">결제</h1>
-      <div className="bg-white p-6 rounded-xl border border-gray-200">
-        <p className="text-gray-500">요금제 & 결제 관리 — 준비 중</p>
-      </div>
+    <div className="space-y-6 max-w-6xl">
+      {/* Current plan */}
+      <section className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="text-lg font-bold text-gray-900">현재 플랜</h3>
+              <span className="text-xs font-bold bg-gray-100 text-gray-700 px-2.5 py-1 rounded-full">Free</span>
+            </div>
+            <p className="text-sm text-gray-500">무료 플랜을 이용 중입니다</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {usage.map(({ label, current, max }) => {
+            const pct = (current / max) * 100;
+            return (
+              <div key={label} className="bg-gray-50 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-gray-500">{label}</span>
+                  <span className="text-sm font-semibold text-gray-900">{current} / {max}</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-1.5">
+                  <div className="bg-blue-600 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Plan comparison */}
+      <section>
+        <div className="text-center mb-6">
+          <h3 className="text-2xl font-bold text-gray-900 mb-2">플랜 업그레이드</h3>
+          <p className="text-sm text-gray-500">광고 규모에 맞는 플랜을 선택하세요</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {plans.map((plan) => {
+            const isHighlighted = plan.color === 'violet';
+            return (
+              <div
+                key={plan.name}
+                className={`bg-white rounded-xl p-6 relative ${
+                  isHighlighted ? 'border-2 border-violet-500 shadow-lg' : 'border border-gray-200'
+                }`}
+              >
+                {plan.badge && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <span className="bg-violet-600 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" />
+                      {plan.badge}
+                    </span>
+                  </div>
+                )}
+                <div className="mb-5">
+                  <h4 className="text-xl font-bold text-gray-900 mb-2">{plan.name}</h4>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-3xl font-bold text-gray-900">{plan.price}</span>
+                    <span className="text-sm text-gray-500">원/월</span>
+                  </div>
+                </div>
+                <ul className="space-y-3 mb-6">
+                  {plan.features.map((f, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                      <Check className={`w-4 h-4 shrink-0 mt-0.5 ${
+                        plan.color === 'violet' ? 'text-violet-600' :
+                        plan.color === 'blue' ? 'text-blue-600' :
+                        'text-gray-600'
+                      }`} />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+                <button className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+                  plan.color === 'violet' ? 'bg-violet-600 text-white hover:bg-violet-700' :
+                  plan.color === 'blue' ? 'bg-blue-600 text-white hover:bg-blue-700' :
+                  'bg-gray-900 text-white hover:bg-gray-800'
+                }`}>
+                  업그레이드
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="bg-white rounded-xl border border-gray-200 p-6">
+        <h3 className="text-lg font-bold text-gray-900 mb-5">자주 묻는 질문</h3>
+        <div className="space-y-4">
+          {faqs.map((f, i) => (
+            <details key={i} className="group border-b border-gray-100 last:border-b-0 pb-4 last:pb-0">
+              <summary className="text-sm font-medium text-gray-900 cursor-pointer hover:text-violet-600 list-none flex items-center justify-between">
+                {f.q}
+                <span className="text-gray-400 group-open:rotate-180 transition-transform">▾</span>
+              </summary>
+              <p className="text-sm text-gray-600 mt-2">{f.a}</p>
+            </details>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
