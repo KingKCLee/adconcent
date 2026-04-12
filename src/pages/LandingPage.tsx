@@ -126,19 +126,26 @@ export function LandingPage() {
         </div>
       </section>
 
-      <footer className="border-t border-gray-100 py-10">
-        <div className="max-w-6xl mx-auto px-6 text-center space-y-3">
-          <p className="text-sm text-gray-500">&copy; 2026 AdConcent. All rights reserved.</p>
-          <div className="text-xs text-gray-500 leading-relaxed">
-            <p>상호명: 더블유부동산 | 대표자: 이광철 | 사업자등록번호: 589-24-01721</p>
-            <p>통신판매업 신고번호: 제2025-인천부평-0992호</p>
-            <p>사업장 주소: 인천광역시 연수구 먼우금로222번길 37 (연수동)</p>
-            <p>대표 전화: 010-9298-8896 | 이메일: noble.kclee@gmail.com</p>
+      <footer className="bg-[#0F172A] py-12 mt-16">
+        <div className="max-w-6xl mx-auto px-6">
+          {/* 상단 — 브랜드 */}
+          <div className="text-center mb-6">
+            <p className="text-lg font-semibold text-white mb-1">AdConcent</p>
+            <p className="text-sm text-gray-400">AI 검색광고 자동화 플랫폼</p>
           </div>
-          <div className="flex items-center justify-center gap-4 text-xs text-gray-500 pt-2">
-            <Link to="/terms" className="hover:text-gray-700">이용약관</Link>
-            <span>·</span>
-            <Link to="/privacy" className="hover:text-gray-700">개인정보처리방침</Link>
+
+          {/* 중단 — 링크 */}
+          <div className="flex items-center justify-center gap-4 text-sm text-gray-500 mb-8">
+            <Link to="/terms" className="hover:text-gray-300 transition-colors">이용약관</Link>
+            <span className="text-gray-700">|</span>
+            <Link to="/privacy" className="hover:text-gray-300 transition-colors">개인정보처리방침</Link>
+          </div>
+
+          {/* 하단 — 사업자 정보 (작고 흐리게) */}
+          <div className="border-t border-gray-800 pt-6 text-center text-xs text-gray-600 leading-relaxed space-y-1">
+            <p>더블유부동산 | 대표 이광철 | 사업자등록번호 589-24-01721 | 통신판매업 제2025-인천부평-0992호</p>
+            <p>인천 연수구 먼우금로222번길 37 | 010-9298-8896 | noble.kclee@gmail.com</p>
+            <p className="pt-2">&copy; 2026 AdConcent. All rights reserved.</p>
           </div>
         </div>
       </footer>
