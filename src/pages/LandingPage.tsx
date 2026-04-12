@@ -143,8 +143,8 @@ export function LandingPage() {
 
           {/* 하단 — 사업자 정보 (작고 흐리게) */}
           <div className="border-t border-gray-800 pt-6 text-center text-xs text-gray-600 leading-relaxed space-y-1">
-            <p>더블유부동산 | 대표 이광철 | 사업자등록번호 589-24-01721 | 통신판매업 제2025-인천부평-0992호</p>
-            <p>인천 연수구 먼우금로222번길 37 | 010-9298-8896 | noble.kclee@gmail.com</p>
+            <p>더블유부동산공인중개사사무소 | 대표 이광철 | 사업자등록번호 589-24-01721 | 통신판매업 제2025-인천부평-0992호</p>
+            <p>인천광역시 부평구 경원대로1344번길 34, 2층 256호 | 대표전화 1533-9077</p>
             <p className="pt-2">&copy; 2026 AdConcent. All rights reserved.</p>
           </div>
         </div>

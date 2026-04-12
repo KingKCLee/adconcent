@@ -5,7 +5,7 @@ export function TermsPage() {
   return (
     <div className="min-h-screen bg-white">
       <header className="border-b border-gray-100">
-        <div className="max-w-[800px] mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link to="/" className="text-xl font-bold text-blue-600">AdConcent</Link>
           <Link to="/" className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900">
             <ArrowLeft className="w-4 h-4" />홈으로
@@ -13,13 +13,14 @@ export function TermsPage() {
         </div>
       </header>
 
-      <main className="max-w-[800px] mx-auto px-6 py-12">
-        <h1 className="text-3xl font-bold text-gray-900 mb-10">AdConcent 이용약관</h1>
+      <main className="max-w-3xl mx-auto px-6 py-12">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">AdConcent 이용약관</h1>
+        <p className="text-sm text-gray-500 mb-10">시행일: 2026년 4월 13일</p>
 
         <div className="space-y-8 text-gray-700 leading-relaxed">
           <section>
             <h2 className="text-lg font-semibold text-gray-900 mb-2">제1조 (목적)</h2>
-            <p>본 약관은 더블유부동산(이하 "회사")이 운영하는 AdConcent 서비스(이하 "서비스")의 이용에 관한 조건 및 절차를 규정함을 목적으로 합니다.</p>
+            <p>본 약관은 더블유부동산공인중개사사무소(이하 "회사")가 운영하는 AdConcent 서비스(이하 "서비스")의 이용에 관한 조건 및 절차를 규정함을 목적으로 합니다.</p>
           </section>
 
           <section>
@@ -44,23 +45,19 @@ export function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">제5조 (서비스 중단)</h2>
-            <p>회사는 시스템 점검, 장애 등의 사유로 서비스를 일시 중단할 수 있으며, 사전 공지를 원칙으로 합니다.</p>
-          </section>
-
-          <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">제6조 (면책조항)</h2>
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">제5조 (면책조항)</h2>
             <p>회사는 천재지변, 네이버 API 정책 변경 등 불가항력적 사유로 인한 서비스 장애에 대해 책임을 지지 않습니다.</p>
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">제7조 (준거법)</h2>
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">제6조 (준거법)</h2>
             <p>본 약관은 대한민국 법률에 따라 해석됩니다.</p>
           </section>
 
-          <section className="border-t border-gray-200 pt-6 mt-10 text-sm text-gray-500">
-            <p>시행일: 2026년 4월 13일</p>
-            <p className="mt-1">사업자: 더블유부동산 | 대표: 이광철 | 사업자등록번호: 589-24-01721</p>
+          <section className="border-t border-gray-200 pt-6 mt-10 text-sm text-gray-500 space-y-1">
+            <p>더블유부동산공인중개사사무소 | 대표 이광철 | 사업자등록번호 589-24-01721</p>
+            <p>통신판매업 신고번호 제2025-인천부평-0992호</p>
+            <p>인천광역시 부평구 경원대로1344번길 34, 2층 256호 | 대표전화 1533-9077</p>
           </section>
         </div>
       </main>

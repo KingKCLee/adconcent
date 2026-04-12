@@ -5,7 +5,7 @@ export function PrivacyPage() {
   return (
     <div className="min-h-screen bg-white">
       <header className="border-b border-gray-100">
-        <div className="max-w-[800px] mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link to="/" className="text-xl font-bold text-blue-600">AdConcent</Link>
           <Link to="/" className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900">
             <ArrowLeft className="w-4 h-4" />홈으로
@@ -13,11 +13,12 @@ export function PrivacyPage() {
         </div>
       </header>
 
-      <main className="max-w-[800px] mx-auto px-6 py-12">
-        <h1 className="text-3xl font-bold text-gray-900 mb-6">개인정보처리방침</h1>
+      <main className="max-w-3xl mx-auto px-6 py-12">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">개인정보처리방침</h1>
+        <p className="text-sm text-gray-500 mb-10">시행일: 2026년 4월 13일</p>
 
         <p className="text-gray-700 leading-relaxed mb-10">
-          더블유부동산(이하 "회사")은 개인정보보호법에 따라 이용자의 개인정보를 보호하고 이와 관련한 고충을 신속하게 처리할 수 있도록 다음과 같이 개인정보처리방침을 수립·공개합니다.
+          더블유부동산공인중개사사무소(이하 "회사")는 개인정보보호법에 따라 이용자의 개인정보를 보호하고 이와 관련한 고충을 신속하게 처리할 수 있도록 다음과 같이 개인정보처리방침을 수립·공개합니다.
         </p>
 
         <div className="space-y-8 text-gray-700 leading-relaxed">
@@ -57,13 +58,13 @@ export function PrivacyPage() {
             <h2 className="text-lg font-semibold text-gray-900 mb-2">제5조 (개인정보보호 책임자)</h2>
             <ul className="space-y-1">
               <li>성명: 이광철</li>
-              <li>이메일: noble.kclee@gmail.com</li>
-              <li>전화: 010-9298-8896</li>
+              <li>전화: 1533-9077</li>
             </ul>
           </section>
 
-          <section className="border-t border-gray-200 pt-6 mt-10 text-sm text-gray-500">
-            <p>시행일: 2026년 4월 13일</p>
+          <section className="border-t border-gray-200 pt-6 mt-10 text-sm text-gray-500 space-y-1">
+            <p>더블유부동산공인중개사사무소 | 대표 이광철 | 사업자등록번호 589-24-01721</p>
+            <p>인천광역시 부평구 경원대로1344번길 34, 2층 256호</p>
           </section>
         </div>
       </main>
