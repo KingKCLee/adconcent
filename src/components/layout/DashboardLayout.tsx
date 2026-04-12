@@ -72,10 +72,8 @@ export function DashboardLayout() {
         {/* Logo */}
         <div className="px-4 py-5">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
-              <span className="text-white font-bold text-sm">A</span>
-            </div>
-            <span className="text-white font-bold text-lg tracking-tight">AdConcent</span>
+            <img src="/logo.svg" alt="A" className="w-8 h-8 rounded-lg" />
+            <span className="text-white font-semibold text-lg tracking-tight">AdConcent</span>
           </div>
         </div>
 
