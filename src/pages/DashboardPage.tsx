@@ -1,25 +1,54 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ShieldCheck, Target, Sparkles, TrendingDown, Copy, Check,
   AlertTriangle, ArrowRight, Zap, X,
 } from 'lucide-react';
 import { workerFetch } from '@/lib/api';
+import { CURRENT_PLAN, getLimits } from '@/lib/plans';
+import { supabase } from '@/lib/supabase';
 
 interface StatsResponse {
   ips: { ip: string; count: number; events: { event: string; time: string }[] }[];
-  summary: { total: number; totalClicks: number };
+  summary: { total: number; totalClicks: number; blocked?: number };
+}
+
+interface BidLog {
+  id: number;
+  created_at: string;
+  keyword: string;
+  prev_bid: number;
+  new_bid: number;
+  current_rank: number | null;
+  target_rank: number | null;
+  strategy: string;
+  reason?: string;
+}
+
+interface KeywordStat {
+  keyword: string;
+  current_rank: number | null;
+  current_bid: number;
+  target_rank: number | null;
+}
+
+interface NaverStatsResponse {
+  totals?: { impCnt: number; clkCnt: number; salesAmt: number; crto: number };
+  daily?: { date: string; impCnt: number; clkCnt: number; salesAmt: number }[];
 }
 
 const WORKER_URL = import.meta.env.VITE_ADCONCENT_WORKER_URL;
+const SITE_ID = 'hitbunyang';
 const SCRIPT_TAG = `<script src="${WORKER_URL}/collect?site_id=YOUR_SITE_ID" async></script>`;
 
-const kpiCards = [
-  { label: '부정클릭 차단', icon: ShieldCheck, color: 'text-amber-600', bg: 'bg-amber-50', value: '0건', sub: '절감 ₩0' },
-  { label: '자동입찰 적중률', icon: Target, color: 'text-green-600', bg: 'bg-green-50', value: '- %', sub: '키워드 0개' },
-  { label: 'AI 분석 사용', icon: Sparkles, color: 'text-violet-600', bg: 'bg-violet-50', value: '0/1회', sub: 'Free 플랜' },
-  { label: '이번달 절감액', icon: TrendingDown, color: 'text-blue-600', bg: 'bg-blue-50', value: '₩267,670', sub: '자동입찰 + 차단' },
-];
+const won = (n: number) => `₩${(n ?? 0).toLocaleString()}`;
+const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
+
+function monthRange() {
+  const today = new Date();
+  const first = new Date(today.getFullYear(), today.getMonth(), 1);
+  return { since: fmtDate(first), until: fmtDate(today) };
+}
 
 const checklist = [
   { label: '사이트 등록', done: false },
@@ -42,12 +71,6 @@ const rankTrend = [
   { rank: 10, keyword: '-' },
 ];
 
-// 임시 자동입찰 조정 내역
-const bidAdjustments = [
-  { keyword: '송도분양', from: 380, to: 200, reason: '목표달성2위→3위', delta: -2, tag: '예인0.7x' },
-  { keyword: '송도아파트분양', from: 290, to: 100, reason: '목표달성3위→3위', delta: -2, tag: '예인0.7x' },
-  { keyword: '송도1군구분양', from: 380, to: 260, reason: '목표달성1위→3위', delta: -2, tag: '예인0.7x' },
-];
 
 // 임시 AI 제안
 const aiSuggestions = [
@@ -82,16 +105,138 @@ function getLast7Days(): string[] {
 
 export function DashboardPage() {
   const [stats, setStats] = useState<StatsResponse | null>(null);
+  const [bidLogs, setBidLogs] = useState<BidLog[]>([]);
+  const [keywords, setKeywords] = useState<KeywordStat[]>([]);
+  const [naverStats, setNaverStats] = useState<NaverStatsResponse | null>(null);
+  const [aiUsage, setAiUsage] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [dismissedSugs, setDismissedSugs] = useState<string[]>([]);
 
   useEffect(() => {
-    workerFetch<StatsResponse>('/stats?site_id=hitbunyang')
-      .then(setStats)
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    const month = monthRange();
+    Promise.allSettled([
+      workerFetch<StatsResponse>(`/stats?site_id=${SITE_ID}`),
+      workerFetch<{ logs?: BidLog[] } | BidLog[]>(`/naver/bid-logs?site_id=${SITE_ID}&limit=100`),
+      workerFetch<{ keywords?: KeywordStat[] } | KeywordStat[]>(`/naver/keyword-stats?site_id=${SITE_ID}`),
+      workerFetch<NaverStatsResponse>('/naver/stats', {
+        method: 'POST',
+        body: JSON.stringify({
+          site_id: SITE_ID,
+          ids: [],
+          timeRange: month,
+          fields: ['clkCnt', 'impCnt', 'salesAmt', 'crto'],
+          idType: 'campaign',
+          timeUnit: 'day',
+        }),
+      }),
+      supabase.auth.getUser(),
+    ]).then(([statsR, logsR, kwR, nstatR, userR]) => {
+      if (statsR.status === 'fulfilled') setStats(statsR.value);
+      if (logsR.status === 'fulfilled') {
+        const v = logsR.value;
+        setBidLogs(Array.isArray(v) ? v : v?.logs ?? []);
+      }
+      if (kwR.status === 'fulfilled') {
+        const v = kwR.value;
+        setKeywords(Array.isArray(v) ? v : v?.keywords ?? []);
+      }
+      if (nstatR.status === 'fulfilled') setNaverStats(nstatR.value);
+      if (userR.status === 'fulfilled') {
+        const meta = (userR.value.data?.user?.user_metadata ?? {}) as Record<string, unknown>;
+        setAiUsage(Number(meta.ai_usage_count ?? 0));
+      }
+      setLoading(false);
+    });
   }, []);
+
+  const totals = naverStats?.totals ?? { impCnt: 0, clkCnt: 0, salesAmt: 0, crto: 0 };
+  const avgCpc = totals.clkCnt > 0 ? Math.round(totals.salesAmt / totals.clkCnt) : 0;
+
+  const blockedToday = useMemo(() => {
+    if (!stats?.ips) return 0;
+    return stats.ips.filter((ip) => ip.count >= 5).length;
+  }, [stats]);
+  const blockSavings = blockedToday * (avgCpc || 0);
+
+  const targetHit = useMemo(() => {
+    if (keywords.length === 0) return { rate: 0, achieved: 0 };
+    const achieved = keywords.filter(
+      (k) => k.target_rank != null && k.current_rank === k.target_rank,
+    ).length;
+    return { rate: Math.round((achieved / keywords.length) * 100), achieved };
+  }, [keywords]);
+
+  const inefficientCount = useMemo(
+    () => keywords.filter((k) => k.current_rank == null).length,
+    [keywords],
+  );
+  const inefficientWaste = inefficientCount * (avgCpc || 0) * 30;
+
+  const monthSavings = useMemo(() => {
+    const monthStart = monthRange().since;
+    const inMonth = bidLogs.filter((l) => (l.created_at ?? '').slice(0, 10) >= monthStart);
+    let saved = 0;
+    for (const l of inMonth) {
+      const d = (l.new_bid ?? 0) - (l.prev_bid ?? 0);
+      if (d < 0) saved += -d;
+    }
+    return saved;
+  }, [bidLogs]);
+
+  const totalSavings = monthSavings + blockSavings;
+
+  const aiLimit = getLimits(CURRENT_PLAN).aiAnalysisPerMonth;
+  const aiLimitLabel = aiLimit === Infinity ? '∞' : aiLimit;
+
+  const recentBidAdjustments = useMemo(() => {
+    return bidLogs.slice(0, 3).map((l) => {
+      const delta = (l.new_bid ?? 0) - (l.prev_bid ?? 0);
+      const pct = l.prev_bid > 0 ? Math.round((delta / l.prev_bid) * 100) : 0;
+      return {
+        keyword: l.keyword,
+        from: l.prev_bid,
+        to: l.new_bid,
+        reason: `${l.current_rank ?? '-'}위→${l.target_rank ?? '-'}위`,
+        delta: pct,
+      };
+    });
+  }, [bidLogs]);
+
+  const kpiCards = [
+    {
+      label: '부정클릭 차단',
+      icon: ShieldCheck,
+      color: 'text-amber-600',
+      bg: 'bg-amber-50',
+      value: `${blockedToday}건`,
+      sub: `절감 ${won(blockSavings)}`,
+    },
+    {
+      label: '자동입찰 적중률',
+      icon: Target,
+      color: 'text-green-600',
+      bg: 'bg-green-50',
+      value: keywords.length > 0 ? `${targetHit.rate}%` : '- %',
+      sub: `키워드 ${keywords.length}개 · 달성 ${targetHit.achieved}`,
+    },
+    {
+      label: 'AI 분석 사용',
+      icon: Sparkles,
+      color: 'text-violet-600',
+      bg: 'bg-violet-50',
+      value: `${aiUsage}/${aiLimitLabel}회`,
+      sub: `${CURRENT_PLAN.toUpperCase()} 플랜`,
+    },
+    {
+      label: '이번달 절감액',
+      icon: TrendingDown,
+      color: 'text-blue-600',
+      bg: 'bg-blue-50',
+      value: won(totalSavings),
+      sub: '자동입찰 + 차단',
+    },
+  ];
 
   const recentClicks: { ip: string; time: string; keyword: string; status: string }[] = [];
   if (stats?.ips) {
@@ -136,24 +281,30 @@ export function DashboardPage() {
       </div>
 
       {/* 비효율 키워드 경고 배너 */}
-      <div className="bg-red-50 border-2 border-red-200 rounded-xl p-5 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
-            <AlertTriangle className="w-6 h-6 text-red-600" />
+      {inefficientCount > 0 && (
+        <div className="bg-red-50 border-2 border-red-200 rounded-xl p-5 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-6 h-6 text-red-600" />
+            </div>
+            <div>
+              <p className="font-semibold text-red-900 text-base">
+                🔴 비효율 키워드 {inefficientCount}개 감지
+              </p>
+              <p className="text-sm text-red-700 mt-0.5">
+                노출 0회 · 예상 낭비 광고비 월 {won(inefficientWaste)}
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="font-semibold text-red-900 text-base">🔴 비효율 키워드 10개 감지</p>
-            <p className="text-sm text-red-700 mt-0.5">7일간 노출 0회 · 예상 낭비 광고비 월 ₩5,100</p>
-          </div>
+          <Link
+            to="/dashboard/autobid"
+            className="flex items-center gap-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold shrink-0 transition-colors"
+          >
+            지금 최적화
+            <ArrowRight className="w-4 h-4" />
+          </Link>
         </div>
-        <Link
-          to="/dashboard/autobid"
-          className="flex items-center gap-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold shrink-0 transition-colors"
-        >
-          지금 최적화
-          <ArrowRight className="w-4 h-4" />
-        </Link>
-      </div>
+      )}
 
       {/* Main content */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -275,23 +426,34 @@ export function DashboardPage() {
             </div>
             <div className="px-5 py-4 bg-gradient-to-br from-blue-50 to-violet-50">
               <p className="text-xs text-gray-500">이번달 누적 절감액</p>
-              <p className="text-2xl font-bold text-blue-700">₩267,670</p>
+              <p className="text-2xl font-bold text-blue-700">{won(monthSavings)}</p>
             </div>
             <div className="px-5 py-3">
               <p className="text-xs font-medium text-gray-500 mb-2">최근 조정 내역</p>
-              <div className="space-y-2">
-                {bidAdjustments.map((adj, i) => (
-                  <div key={i} className="flex items-center justify-between text-xs">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-800 truncate">{adj.keyword}</p>
-                      <p className="text-gray-400 mt-0.5">
-                        {adj.from}→{adj.to}원 · {adj.reason}
-                      </p>
+              {recentBidAdjustments.length === 0 ? (
+                <p className="text-xs text-gray-400 py-2">조정 내역이 없습니다</p>
+              ) : (
+                <div className="space-y-2">
+                  {recentBidAdjustments.map((adj, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-800 truncate">{adj.keyword}</p>
+                        <p className="text-gray-400 mt-0.5">
+                          {adj.from}→{adj.to}원 · {adj.reason}
+                        </p>
+                      </div>
+                      <span
+                        className={`font-semibold ml-2 shrink-0 ${
+                          adj.delta < 0 ? 'text-green-600' : adj.delta > 0 ? 'text-red-600' : 'text-gray-500'
+                        }`}
+                      >
+                        {adj.delta > 0 ? '+' : ''}
+                        {adj.delta}%
+                      </span>
                     </div>
-                    <span className="text-green-600 font-semibold ml-2 shrink-0">{adj.delta}%</span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
