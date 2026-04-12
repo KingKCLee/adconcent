@@ -168,7 +168,7 @@ export function LandingPage() {
       <nav className="sticky top-0 z-50 backdrop-blur-md bg-black/50 border-b border-white/5">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2.5">
-            <img src="/logo.svg" alt="A" className="w-8 h-8 rounded-lg" />
+            <img src="/logo.svg" alt="A" width={32} height={32} className="w-8 h-8 rounded-lg" />
             <span className="text-white font-semibold text-lg">AdConcent</span>
           </Link>
           <div className="flex items-center gap-5">
@@ -181,8 +181,13 @@ export function LandingPage() {
       </nav>
 
       {/* Hero */}
-      <section className="relative overflow-hidden">
-        <div className="absolute inset-0 hero-glow pointer-events-none" />
+      <section
+        className="relative overflow-hidden"
+        style={{
+          background:
+            'radial-gradient(ellipse at center, rgba(37,99,235,0.15) 0%, transparent 70%), #0A0A0F',
+        }}
+      >
         <div className="absolute inset-0 grid-pattern pointer-events-none opacity-50" />
 
         <div className="relative max-w-5xl mx-auto px-6 pt-24 pb-24 text-center">
@@ -339,7 +344,7 @@ export function LandingPage() {
       </section>
 
       {/* 5. Stats */}
-      <section className="relative py-20 bg-gradient-to-br from-blue-950/40 via-[#0A0A0F] to-violet-950/40">
+      <section className="relative py-20 bg-gradient-to-r from-blue-900 to-purple-900">
         <div className="max-w-6xl mx-auto px-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {stats.map((s) => (
@@ -356,7 +361,7 @@ export function LandingPage() {
       </section>
 
       {/* 6. Pricing */}
-      <section className="relative py-24">
+      <section className="relative py-24 bg-[#0F172A]">
         <div className="max-w-6xl mx-auto px-6">
           <div className="text-center mb-16">
             <h2 className="text-4xl md:text-5xl font-bold mb-4">
@@ -430,8 +435,7 @@ export function LandingPage() {
       </section>
 
       {/* 7. Final CTA */}
-      <section className="relative py-24 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-600 via-blue-700 to-violet-700" />
+      <section className="relative py-24 overflow-hidden bg-gradient-to-r from-blue-600 to-purple-600">
         <div className="absolute inset-0 grid-pattern opacity-10" />
 
         <div className="relative max-w-3xl mx-auto px-6 text-center">
@@ -457,11 +461,11 @@ export function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="relative bg-black/40 border-t border-white/5 py-12 backdrop-blur-sm">
+      <footer className="relative bg-[#020209] border-t border-white/5 py-12 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-6">
           <div className="text-center mb-6">
             <div className="inline-flex items-center gap-2.5 mb-2">
-              <img src="/logo.svg" alt="A" className="w-7 h-7 rounded-lg" />
+              <img src="/logo.svg" alt="A" width={28} height={28} className="w-7 h-7 rounded-lg" />
               <p className="text-lg font-semibold text-white">AdConcent</p>
             </div>
             <p className="text-sm text-gray-400">AI 검색광고 자동화 플랫폼</p>
