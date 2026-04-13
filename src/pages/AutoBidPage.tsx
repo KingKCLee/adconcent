@@ -531,8 +531,16 @@ export function AutoBidPage() {
 
   const filteredKeywords = useMemo(() => {
     return keywords.filter((k) => {
-      if (filterCampaign !== 'all' && k.campaign_id !== filterCampaign) return false;
-      if (filterGroup !== 'all' && k.group_id !== filterGroup) return false;
+      if (filterCampaign !== 'all') {
+        const ka = k as any;
+        const campaignId = ka.ncc_campaign_id || k.campaign_id || ka.nccCampaignId || ka.campaignId || '';
+        if (campaignId !== filterCampaign) return false;
+      }
+      if (filterGroup !== 'all') {
+        const ka = k as any;
+        const groupId = ka.ncc_adgroup_id || k.group_id || ka.nccAdgroupId || ka.adgroupId || ka.adgroup_id || '';
+        if (groupId !== filterGroup) return false;
+      }
       if (filterDevice !== 'all') {
         const dev = (k.device ?? 'ALL') as Device;
         if (filterDevice === 'PC' && dev === 'M') return false;
