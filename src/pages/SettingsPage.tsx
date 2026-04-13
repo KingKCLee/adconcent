@@ -64,8 +64,8 @@ export function SettingsPage() {
       setEmail(userEmail);
 
       const qs = userEmail ? `?email=${encodeURIComponent(userEmail)}` : '';
-      const resp = await workerFetch<{ sites?: Site[] } | Site[]>(`/sites/list${qs}`);
-      const list = Array.isArray(resp) ? resp : resp?.sites ?? [];
+      const resp = await workerFetch<{ data?: Site[]; sites?: Site[] } | Site[]>(`/sites/list${qs}`);
+      const list: Site[] = Array.isArray(resp) ? resp : resp?.data ?? resp?.sites ?? [];
       setSites(list);
       if (list.length > 0 && !selectedId) {
         setSelectedId(list[0].site_id);

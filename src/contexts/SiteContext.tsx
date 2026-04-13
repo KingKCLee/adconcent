@@ -47,8 +47,12 @@ export function SiteProvider({ children }: { children: ReactNode }) {
       const { data: userData } = await supabase.auth.getUser();
       const userEmail = userData?.user?.email ?? '';
       const qs = userEmail ? `?email=${encodeURIComponent(userEmail)}` : '';
-      const resp = await workerFetch<{ sites?: SiteInfo[] } | SiteInfo[]>(`/sites/list${qs}`);
-      const list = Array.isArray(resp) ? resp : resp?.sites ?? [];
+      const resp = await workerFetch<
+        { data?: SiteInfo[]; sites?: SiteInfo[] } | SiteInfo[]
+      >(`/sites/list${qs}`);
+      const list: SiteInfo[] = Array.isArray(resp)
+        ? resp
+        : resp?.data ?? resp?.sites ?? [];
       setSites(list);
       const stored = typeof window !== 'undefined' ? localStorage.getItem('adconcent.siteId') : null;
       const initial = list.find((s) => s.site_id === stored)?.site_id ?? list[0]?.site_id ?? '';
