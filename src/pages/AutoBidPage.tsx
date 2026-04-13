@@ -168,6 +168,11 @@ export function AutoBidPage() {
   const [searchText, setSearchText] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBulk, setShowBulk] = useState(false);
+  const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number | null } | null>(null);
+
+  // Sort state
+  const [sortKey, setSortKey] = useState<string>('current_bid');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   // Logs tab state
   const [logs, setLogs] = useState<BidLog[]>([]);
@@ -176,17 +181,31 @@ export function AutoBidPage() {
   const loadKeywords = async () => {
     if (!siteId) return;
     setLoadingKw(true);
+    setLoadProgress({ loaded: 0, total: null });
+    const PAGE = 50;
+    const all: KeywordStat[] = [];
+    let offset = 0;
     try {
-      const data = await workerFetch<{ keywords?: KeywordStat[] } | KeywordStat[]>(
-        `/naver/keyword-stats?site_id=${siteId}`,
-      );
-      const list = Array.isArray(data) ? data : data?.keywords ?? [];
-      setKeywords(list);
+      while (true) {
+        const data = await workerFetch<
+          { data?: KeywordStat[]; keywords?: KeywordStat[]; total?: number } | KeywordStat[]
+        >(`/naver/keyword-stats?site_id=${siteId}&offset=${offset}&limit=${PAGE}`);
+        const items: KeywordStat[] = Array.isArray(data)
+          ? data
+          : data?.data ?? data?.keywords ?? [];
+        const total = !Array.isArray(data) && typeof data?.total === 'number' ? data.total : null;
+        all.push(...items);
+        setKeywords([...all]);
+        setLoadProgress({ loaded: all.length, total });
+        if (items.length < PAGE) break;
+        offset += PAGE;
+        if (offset > 5000) break; // safety cap
+      }
     } catch (e) {
       console.error('keyword-stats load failed', e);
-      setKeywords([]);
     } finally {
       setLoadingKw(false);
+      setLoadProgress(null);
     }
   };
 
@@ -371,6 +390,45 @@ export function AutoBidPage() {
       return true;
     });
   }, [keywords, filterCampaign, filterGroup, filterDevice, filterStatus, searchText]);
+
+  const sortedKeywords = useMemo(() => {
+    const list = [...filteredKeywords];
+    const stringKeys = new Set(['keyword', 'status_code']);
+    list.sort((a, b) => {
+      let av: any;
+      let bv: any;
+      if (sortKey === 'status_code') {
+        av = getStatus(a).label;
+        bv = getStatus(b).label;
+      } else {
+        av = (a as any)[sortKey];
+        bv = (b as any)[sortKey];
+      }
+      const isString = stringKeys.has(sortKey) || typeof av === 'string' || typeof bv === 'string';
+      if (isString) {
+        const sa = (av ?? '') as string;
+        const sb = (bv ?? '') as string;
+        return sortDir === 'asc' ? sa.localeCompare(sb, 'ko') : sb.localeCompare(sa, 'ko');
+      }
+      // number/null: null은 항상 맨 뒤
+      const na = av == null ? null : Number(av);
+      const nb = bv == null ? null : Number(bv);
+      if (na == null && nb == null) return 0;
+      if (na == null) return 1;
+      if (nb == null) return -1;
+      return sortDir === 'asc' ? na - nb : nb - na;
+    });
+    return list;
+  }, [filteredKeywords, sortKey, sortDir]);
+
+  const handleSort = (key: string) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('desc');
+    }
+  };
 
   const groupOptions = useMemo(() => {
     if (filterCampaign === 'all') {
@@ -573,9 +631,13 @@ export function AutoBidPage() {
 
       {tab === 'keywords' ? (
         <KeywordsTab
-          keywords={filteredKeywords}
+          keywords={sortedKeywords}
           totalCount={keywords.length}
           loading={loadingKw}
+          loadProgress={loadProgress}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSort={handleSort}
           running={running}
           previewing={previewing}
           isFree={isFree}
@@ -687,12 +749,46 @@ export function AutoBidPage() {
   );
 }
 
+/* ---------- Sortable Header ---------- */
+
+function SortHeader(props: {
+  label: string;
+  sortKey: string;
+  align: 'left' | 'center' | 'right';
+  current: string;
+  dir: 'asc' | 'desc';
+  onSort: (key: string) => void;
+}) {
+  const { label, sortKey, align, current, dir, onSort } = props;
+  const active = current === sortKey;
+  const alignCls = align === 'left' ? 'text-left' : align === 'right' ? 'text-right' : 'text-center';
+  const justify =
+    align === 'left' ? 'justify-start' : align === 'right' ? 'justify-end' : 'justify-center';
+  return (
+    <th className={`px-2 py-3 font-medium ${alignCls}`}>
+      <button
+        onClick={() => onSort(sortKey)}
+        className={`inline-flex items-center gap-1 w-full ${justify} hover:text-blue-600 transition-colors ${
+          active ? 'text-blue-600' : 'text-gray-400'
+        }`}
+      >
+        <span>{label}</span>
+        <span className="text-[9px]">{active ? (dir === 'asc' ? '▲' : '▼') : '↕'}</span>
+      </button>
+    </th>
+  );
+}
+
 /* ---------- Keywords Tab ---------- */
 
 interface KeywordsTabProps {
   keywords: KeywordStat[];
   totalCount: number;
   loading: boolean;
+  loadProgress: { loaded: number; total: number | null } | null;
+  sortKey: string;
+  sortDir: 'asc' | 'desc';
+  onSort: (key: string) => void;
   running: boolean;
   previewing: boolean;
   isFree: boolean;
@@ -727,7 +823,8 @@ interface KeywordsTabProps {
 
 function KeywordsTab(props: KeywordsTabProps) {
   const {
-    keywords, totalCount, loading, running, previewing, isFree,
+    keywords, totalCount, loading, loadProgress, sortKey, sortDir, onSort,
+    running, previewing, isFree,
     bulkProgress, onBulkImport, onAdd, onRun, onPreview, onEdit, onDelete, onToggle,
     campaignsGroups, groupOptions,
     filterCampaign, setFilterCampaign, filterGroup, setFilterGroup,
@@ -886,10 +983,18 @@ function KeywordsTab(props: KeywordsTabProps) {
           </div>
         </div>
 
-      {loading ? (
+      {loading && keywords.length > 0 && loadProgress && (
+        <div className="px-5 py-2 bg-blue-50 border-b border-blue-100 text-xs text-blue-700 flex items-center gap-2">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          키워드 로딩 중... ({loadProgress.loaded}{loadProgress.total ? `/${loadProgress.total}` : ''}개)
+        </div>
+      )}
+      {loading && keywords.length === 0 ? (
         <div className="p-12 text-center text-sm text-gray-400">
           <Loader2 className="w-6 h-6 animate-spin mx-auto mb-3" />
-          불러오는 중...
+          {loadProgress
+            ? `키워드 로딩 중... (${loadProgress.loaded}${loadProgress.total ? `/${loadProgress.total}` : ''}개)`
+            : '불러오는 중...'}
         </div>
       ) : keywords.length === 0 ? (
         <div className="p-12 text-center text-sm text-gray-400">
@@ -909,17 +1014,17 @@ function KeywordsTab(props: KeywordsTabProps) {
                     className="rounded border-gray-300"
                   />
                 </th>
-                <th className="px-4 py-3 font-medium">키워드</th>
+                <SortHeader label="키워드" sortKey="keyword" align="left" current={sortKey} dir={sortDir} onSort={onSort} />
                 <th className="px-2 py-3 font-medium text-center">매체</th>
-                <th className="px-2 py-3 font-medium text-right">PC검색</th>
-                <th className="px-2 py-3 font-medium text-right">MO검색</th>
-                <th className="px-2 py-3 font-medium text-center">품질</th>
-                <th className="px-3 py-3 font-medium text-center">현재순위</th>
-                <th className="px-2 py-3 font-medium text-right">1위</th>
-                <th className="px-2 py-3 font-medium text-right">3위</th>
-                <th className="px-2 py-3 font-medium text-right">5위</th>
-                <th className="px-3 py-3 font-medium text-right">현재입찰가</th>
-                <th className="px-3 py-3 font-medium text-center">상태</th>
+                <SortHeader label="PC검색" sortKey="monthly_pc" align="right" current={sortKey} dir={sortDir} onSort={onSort} />
+                <SortHeader label="MO검색" sortKey="monthly_mobile" align="right" current={sortKey} dir={sortDir} onSort={onSort} />
+                <SortHeader label="품질" sortKey="qi_grade" align="center" current={sortKey} dir={sortDir} onSort={onSort} />
+                <SortHeader label="현재순위" sortKey="current_rank" align="center" current={sortKey} dir={sortDir} onSort={onSort} />
+                <SortHeader label="1위" sortKey="bid_rank1" align="right" current={sortKey} dir={sortDir} onSort={onSort} />
+                <SortHeader label="3위" sortKey="bid_rank3" align="right" current={sortKey} dir={sortDir} onSort={onSort} />
+                <SortHeader label="5위" sortKey="bid_rank5" align="right" current={sortKey} dir={sortDir} onSort={onSort} />
+                <SortHeader label="현재입찰가" sortKey="current_bid" align="right" current={sortKey} dir={sortDir} onSort={onSort} />
+                <SortHeader label="상태" sortKey="status_code" align="center" current={sortKey} dir={sortDir} onSort={onSort} />
                 <th className="px-3 py-3 font-medium text-center">최저가</th>
                 <th className="px-3 py-3 font-medium text-center">ON/OFF</th>
                 <th className="px-3 py-3 font-medium text-center">액션</th>
