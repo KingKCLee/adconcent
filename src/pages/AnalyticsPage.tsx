@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Sparkles, Loader2, AlertCircle, Lightbulb, CheckCircle2, FileText, TrendingUp, Wallet } from 'lucide-react';
-import { workerFetch } from '@/lib/api';
+import { workerFetch, fetchNaverStats } from '@/lib/api';
 import { getLimits } from '@/lib/plans';
 import { UpgradePrompt } from '@/components/ui/UpgradePrompt';
 import { usePlan } from '@/hooks/usePlan';
@@ -148,40 +148,10 @@ export function AnalyticsPage() {
     lastWeekEnd.setDate(thisWeekStart.getDate() - 1);
 
     Promise.allSettled([
-      workerFetch<any>('/naver/stats', {
-        method: 'POST',
-        body: JSON.stringify({
-          site_id: siteId,
-          ids: [],
-          timeRange: { since: fmtDate(monthFirst), until: fmtDate(today) },
-          fields: ['clkCnt', 'impCnt', 'salesAmt', 'crto'],
-          idType: 'campaign',
-          timeUnit: 'day',
-        }),
-      }),
+      fetchNaverStats(siteId, { since: fmtDate(monthFirst), until: fmtDate(today) }),
       workerFetch<any>(`/naver/keyword-stats?site_id=${siteId}&offset=0&limit=20`),
-      workerFetch<any>('/naver/stats', {
-        method: 'POST',
-        body: JSON.stringify({
-          site_id: siteId,
-          ids: [],
-          timeRange: { since: fmtDate(thisWeekStart), until: fmtDate(today) },
-          fields: ['clkCnt', 'impCnt', 'salesAmt', 'crto'],
-          idType: 'campaign',
-          timeUnit: 'day',
-        }),
-      }),
-      workerFetch<any>('/naver/stats', {
-        method: 'POST',
-        body: JSON.stringify({
-          site_id: siteId,
-          ids: [],
-          timeRange: { since: fmtDate(lastWeekStart), until: fmtDate(lastWeekEnd) },
-          fields: ['clkCnt', 'impCnt', 'salesAmt', 'crto'],
-          idType: 'campaign',
-          timeUnit: 'day',
-        }),
-      }),
+      fetchNaverStats(siteId, { since: fmtDate(thisWeekStart), until: fmtDate(today) }),
+      fetchNaverStats(siteId, { since: fmtDate(lastWeekStart), until: fmtDate(lastWeekEnd) }),
     ]).then(([monthR, kwR, thisWeekR, lastWeekR]) => {
       const next: any = {
         totals: { impressions: 0, clicks: 0, cost: 0, conversions: 0 },

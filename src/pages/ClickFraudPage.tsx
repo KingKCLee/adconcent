@@ -7,7 +7,7 @@ import { Link } from 'react-router-dom';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
-import { workerFetch } from '@/lib/api';
+import { workerFetch, fetchNaverStats } from '@/lib/api';
 import { getLimits } from '@/lib/plans';
 import { UpgradePrompt } from '@/components/ui/UpgradePrompt';
 import { usePlan } from '@/hooks/usePlan';
@@ -145,17 +145,7 @@ export function ClickFraudPage() {
     setLoading(true);
     Promise.allSettled([
       workerFetch<StatsDetailResponse>(`/stats/detail?site_id=${siteId}&period=${period}`),
-      workerFetch<NaverStatsResponse>('/naver/stats', {
-        method: 'POST',
-        body: JSON.stringify({
-          site_id: siteId,
-          ids: [],
-          timeRange: { since: dates.since, until: dates.until },
-          fields: ['clkCnt', 'impCnt', 'salesAmt', 'crto'],
-          idType: 'campaign',
-          timeUnit: 'day',
-        }),
-      }),
+      fetchNaverStats(siteId, { since: dates.since, until: dates.until }),
     ]).then(([detailR, naverR]) => {
       if (detailR.status === 'fulfilled') setDetail(detailR.value);
       else setDetail(null);

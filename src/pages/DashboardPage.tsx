@@ -4,7 +4,7 @@ import {
   ShieldCheck, Target, Sparkles, TrendingDown, Copy, Check,
   AlertTriangle, ArrowRight, Zap, X,
 } from 'lucide-react';
-import { workerFetch } from '@/lib/api';
+import { workerFetch, fetchNaverStats } from '@/lib/api';
 import { getLimits } from '@/lib/plans';
 import { supabase } from '@/lib/supabase';
 import { usePlan } from '@/hooks/usePlan';
@@ -95,17 +95,7 @@ export function DashboardPage() {
       workerFetch<StatsResponse>(`/stats?site_id=${siteId}`),
       workerFetch<{ logs?: BidLog[] } | BidLog[]>(`/naver/bid-logs?site_id=${siteId}&limit=100`),
       workerFetch<{ keywords?: KeywordStat[] } | KeywordStat[]>(`/naver/keyword-stats?site_id=${siteId}`),
-      workerFetch<NaverStatsResponse>('/naver/stats', {
-        method: 'POST',
-        body: JSON.stringify({
-          site_id: siteId,
-          ids: [],
-          timeRange: month,
-          fields: ['clkCnt', 'impCnt', 'salesAmt', 'crto'],
-          idType: 'campaign',
-          timeUnit: 'day',
-        }),
-      }),
+      fetchNaverStats(siteId, month),
       supabase.auth.getUser(),
     ]).then(([statsR, logsR, kwR, nstatR, userR]) => {
       if (statsR.status === 'fulfilled') setStats(statsR.value);
