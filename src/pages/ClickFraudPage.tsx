@@ -1,15 +1,60 @@
-import { useState, useEffect } from 'react';
-import { Shield, Ban, TrendingDown, Copy, Check, Code, AlertTriangle } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Shield, Ban, TrendingDown, Copy, Check, Code, AlertTriangle,
+  MousePointerClick, Loader2, Monitor, Smartphone,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from 'recharts';
 import { workerFetch } from '@/lib/api';
 import { getLimits } from '@/lib/plans';
 import { UpgradePrompt } from '@/components/ui/UpgradePrompt';
 import { usePlan } from '@/hooks/usePlan';
 import { useSite } from '@/contexts/SiteContext';
 
-interface StatsResponse {
-  ips: { ip: string; count: number; firstSeen: string; lastSeen: string; events: { event: string; time: string }[] }[];
-  summary: { total: number; totalClicks: number };
+type Period = 'today' | '7d' | '30d';
+
+interface HourBucket {
+  hour: number;
+  clicks: number;
+  blocked: number;
+}
+
+interface TopIp {
+  ip: string;
+  count: number;
+  status?: string;
+  first_seen?: string;
+  last_seen?: string;
+  firstSeen?: string;
+  lastSeen?: string;
+}
+
+interface RecentLog {
+  id?: string | number;
+  time?: string;
+  created_at?: string;
+  ip: string;
+  keyword?: string;
+  device?: string;
+  status?: string;
+}
+
+interface StatsDetailResponse {
+  totals?: {
+    total_clicks?: number;
+    blocked?: number;
+    suspicious?: number;
+    saved?: number;
+  };
+  total_clicks?: number;
+  blocked?: number;
+  suspicious?: number;
+  saved?: number;
+  by_hour?: HourBucket[];
+  top_ips?: TopIp[];
+  recent_logs?: RecentLog[];
 }
 
 interface NaverStatsResponse {
@@ -19,12 +64,17 @@ interface NaverStatsResponse {
 const WORKER_URL = import.meta.env.VITE_ADCONCENT_WORKER_URL;
 const FALLBACK_AVG_CPC = 800;
 
+const num = (n: number) => (n ?? 0).toLocaleString();
+const won = (n: number) => `₩${num(n ?? 0)}`;
+
 export function ClickFraudPage() {
   const { siteId } = useSite();
   const { plan, isFree } = usePlan();
   const limits = getLimits(plan);
   const SCRIPT_TAG = `<script src="${WORKER_URL}/collect?site_id=${siteId}" async></script>`;
-  const [stats, setStats] = useState<StatsResponse | null>(null);
+
+  const [period, setPeriod] = useState<Period>('today');
+  const [detail, setDetail] = useState<StatsDetailResponse | null>(null);
   const [avgCpc, setAvgCpc] = useState<number>(FALLBACK_AVG_CPC);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -37,10 +87,10 @@ export function ClickFraudPage() {
     setLoading(true);
     const today = new Date();
     const since = new Date(today);
-    since.setDate(since.getDate() - 6);
+    since.setDate(since.getDate() - (period === '30d' ? 29 : period === '7d' ? 6 : 0));
     const fmt = (d: Date) => d.toISOString().slice(0, 10);
     Promise.allSettled([
-      workerFetch<StatsResponse>(`/stats?site_id=${siteId}`),
+      workerFetch<StatsDetailResponse>(`/stats/detail?site_id=${siteId}&period=${period}`),
       workerFetch<NaverStatsResponse>('/naver/stats', {
         method: 'POST',
         body: JSON.stringify({
@@ -52,8 +102,9 @@ export function ClickFraudPage() {
           timeUnit: 'day',
         }),
       }),
-    ]).then(([statsR, naverR]) => {
-      if (statsR.status === 'fulfilled') setStats(statsR.value);
+    ]).then(([detailR, naverR]) => {
+      if (detailR.status === 'fulfilled') setDetail(detailR.value);
+      else setDetail(null);
       if (naverR.status === 'fulfilled') {
         const t = naverR.value?.totals;
         if (t && t.clkCnt > 0) setAvgCpc(Math.round(t.salesAmt / t.clkCnt));
@@ -62,22 +113,45 @@ export function ClickFraudPage() {
     });
   };
 
-  useEffect(() => { loadStats(); /* eslint-disable-next-line */ }, [siteId]);
+  useEffect(() => {
+    loadStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [siteId, period]);
 
-  const totalClicks = stats?.summary.totalClicks || 0;
-  const suspiciousIps = stats?.ips.filter(ip => ip.count >= 5) || [];
-  const blockedClicks = suspiciousIps.reduce((sum, ip) => sum + ip.count, 0);
-  const savedAmount = blockedClicks * avgCpc;
+  const totals = useMemo(() => {
+    const t = detail?.totals ?? {};
+    return {
+      totalClicks: t.total_clicks ?? detail?.total_clicks ?? 0,
+      blocked: t.blocked ?? detail?.blocked ?? 0,
+      suspicious: t.suspicious ?? detail?.suspicious ?? 0,
+      saved: t.saved ?? detail?.saved ?? 0,
+    };
+  }, [detail]);
+
+  const blockRate = totals.totalClicks > 0
+    ? ((totals.blocked / totals.totalClicks) * 100).toFixed(1)
+    : '0.0';
+  const savedAmount = totals.saved > 0 ? totals.saved : totals.blocked * avgCpc;
+
+  const hourBuckets: HourBucket[] = useMemo(() => {
+    const raw = detail?.by_hour ?? [];
+    // Worker가 누락된 시간을 안 줄 수 있으므로 0~23 보강
+    const map = new Map<number, HourBucket>();
+    for (const b of raw) map.set(b.hour, b);
+    return Array.from({ length: 24 }, (_, h) => map.get(h) ?? { hour: h, clicks: 0, blocked: 0 });
+  }, [detail]);
+
+  const topIps: TopIp[] = detail?.top_ips ?? [];
+  const recentLogs: RecentLog[] = detail?.recent_logs ?? [];
+
   const canBlock = blockedThisMonth < limits.ipBlockPerMonth;
-  const unblockedSuspicious = suspiciousIps.length;
-
-  // Free 플랜: 3일치만 표시
-  const cutoffMs = Date.now() - limits.logDays * 86400 * 1000;
+  const unblockedSuspicious = totals.suspicious;
 
   const kpis = [
-    { label: '수집 중 (지난 7일)', icon: Shield, color: 'text-blue-600', bg: 'bg-blue-50', value: `${totalClicks.toLocaleString()}건` },
-    { label: '자동 차단 IP', icon: Ban, color: 'text-red-600', bg: 'bg-red-50', value: `${suspiciousIps.length}개` },
-    { label: '절감 광고비 (추정)', icon: TrendingDown, color: 'text-green-600', bg: 'bg-green-50', value: `₩${savedAmount.toLocaleString()}` },
+    { label: '총 클릭수', icon: MousePointerClick, color: 'text-blue-600', bg: 'bg-blue-50', value: `${num(totals.totalClicks)}건`, sub: period === 'today' ? '오늘' : period === '7d' ? '최근 7일' : '최근 30일' },
+    { label: '차단 건수', icon: Ban, color: 'text-red-600', bg: 'bg-red-50', value: `${num(totals.blocked)}건`, sub: `차단율 ${blockRate}%` },
+    { label: '의심 클릭', icon: AlertTriangle, color: 'text-amber-600', bg: 'bg-amber-50', value: `${num(totals.suspicious)}건`, sub: '검토 대기' },
+    { label: '절감 금액', icon: TrendingDown, color: 'text-green-600', bg: 'bg-green-50', value: won(savedAmount), sub: `평균 CPC ${won(avgCpc)}` },
   ];
 
   const handleCopy = () => {
@@ -106,7 +180,7 @@ export function ClickFraudPage() {
         method: 'POST',
         body: JSON.stringify({ site_id: siteId, ip, reason: 'manual' }),
       });
-      setBlockedThisMonth(n => n + 1);
+      setBlockedThisMonth((n) => n + 1);
       loadStats();
     } catch (e) {
       alert(`차단 실패: ${(e as Error).message}`);
@@ -115,7 +189,26 @@ export function ClickFraudPage() {
 
   return (
     <div className="space-y-6">
-      {/* Free 플랜 경고 배너 */}
+      {/* Period selector */}
+      <div className="bg-white rounded-xl border border-gray-200 px-5 py-3 flex items-center gap-2">
+        <span className="text-xs text-gray-500 mr-2">기간:</span>
+        {(['today', '7d', '30d'] as Period[]).map((p) => (
+          <button
+            key={p}
+            onClick={() => setPeriod(p)}
+            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
+              period === p ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {p === 'today' ? '오늘' : p === '7d' ? '7일' : '30일'}
+          </button>
+        ))}
+        <button onClick={loadStats} className="ml-auto text-xs text-blue-600 hover:underline">
+          새로고침
+        </button>
+      </div>
+
+      {/* Free 플랜 경고 */}
       {isFree && unblockedSuspicious > limits.ipBlockPerMonth && (
         <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -133,9 +226,9 @@ export function ClickFraudPage() {
         </div>
       )}
 
-      {/* KPI */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {kpis.map(({ label, icon: Icon, color, bg, value }) => (
+      {/* KPI 4 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map(({ label, icon: Icon, color, bg, value, sub }) => (
           <div key={label} className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm text-gray-500">{label}</span>
@@ -143,93 +236,178 @@ export function ClickFraudPage() {
                 <Icon className={`w-5 h-5 ${color}`} />
               </div>
             </div>
-            <p className="text-2xl font-bold text-gray-900">{value}</p>
+            <p className="text-2xl font-bold text-gray-900">
+              {loading ? <Loader2 className="w-5 h-5 animate-spin text-gray-300" /> : value}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">{sub}</p>
           </div>
         ))}
       </div>
 
-      {/* IP Table */}
+      {/* Hourly chart */}
+      <div className="bg-white rounded-xl border border-gray-200">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+          <Shield className="w-4 h-4 text-blue-600" />
+          <h3 className="font-semibold text-gray-900">시간대별 클릭 / 차단</h3>
+        </div>
+        <div className="p-5">
+          {loading ? (
+            <div className="h-64 flex items-center justify-center text-sm text-gray-400">
+              <Loader2 className="w-6 h-6 animate-spin mr-2" />
+              불러오는 중...
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={hourBuckets}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                <XAxis dataKey="hour" tick={{ fontSize: 11, fill: '#9ca3af' }} tickFormatter={(h) => `${h}시`} />
+                <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="clicks" name="클릭" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="blocked" name="차단" fill="#dc2626" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+
+      {/* Top IPs */}
       <div className="bg-white rounded-xl border border-gray-200">
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h3 className="font-semibold text-gray-900">IP별 클릭 현황</h3>
-            {isFree && (
-              <span className="text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-700">
-                {blockedThisMonth}/{limits.ipBlockPerMonth} 차단 사용
-              </span>
-            )}
-          </div>
-          <button onClick={loadStats} className="text-xs text-blue-600 hover:underline">새로고침</button>
+          <h3 className="font-semibold text-gray-900">상위 차단 IP</h3>
+          {isFree && (
+            <span className="text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-700">
+              {blockedThisMonth}/{limits.ipBlockPerMonth} 차단 사용
+            </span>
+          )}
         </div>
-
-        {/* Free 로그 제한 배너 */}
-        {isFree && (
-          <div className="px-5 py-2.5 bg-blue-50 border-b border-blue-100 text-xs text-blue-700">
-            💡 최근 {limits.logDays}일치 로그만 표시됩니다. 90일치 로그는 <Link to="/dashboard/billing" className="font-semibold underline">Starter부터</Link> 조회 가능합니다.
-          </div>
-        )}
-
         {loading ? (
-          <div className="p-8 text-center text-gray-400 text-sm">로딩 중...</div>
-        ) : (stats?.ips.length || 0) > 0 ? (
+          <div className="p-8 text-center text-sm text-gray-400">
+            <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+          </div>
+        ) : topIps.length === 0 ? (
+          <div className="p-8 text-center text-sm text-gray-400">집계된 IP가 없습니다</div>
+        ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
+                <tr className="text-left text-xs text-gray-400 border-b border-gray-100 bg-gray-50">
                   <th className="px-5 py-3 font-medium">IP 주소</th>
-                  <th className="px-5 py-3 font-medium">클릭 수</th>
-                  <th className="px-5 py-3 font-medium">첫 감지</th>
-                  <th className="px-5 py-3 font-medium">마지막 감지</th>
-                  <th className="px-5 py-3 font-medium">상태</th>
-                  <th className="px-5 py-3 font-medium">액션</th>
+                  <th className="px-3 py-3 font-medium text-right">클릭 수</th>
+                  <th className="px-3 py-3 font-medium text-center">상태</th>
+                  <th className="px-3 py-3 font-medium">최초 감지</th>
+                  <th className="px-3 py-3 font-medium">마지막 감지</th>
+                  <th className="px-3 py-3 font-medium text-center">액션</th>
                 </tr>
               </thead>
               <tbody>
-                {stats!.ips
-                  .sort((a, b) => b.count - a.count)
-                  .map((row, idx) => {
-                    const isOld = new Date(row.lastSeen).getTime() < cutoffMs;
-                    const isLocked = isFree && isOld;
-                    const isSuspicious = row.count >= 5;
-                    const status = row.count >= 10 ? '차단됨' : isSuspicious ? '의심' : '정상';
-                    const statusClass = row.count >= 10 ? 'bg-red-50 text-red-600' :
-                      isSuspicious ? 'bg-amber-50 text-amber-600' :
-                      'bg-green-50 text-green-600';
-                    const blockReachedLimit = isFree && idx >= limits.ipBlockPerMonth && isSuspicious;
-                    return (
-                      <tr key={row.ip} className={`border-b border-gray-50 hover:bg-gray-50 ${isLocked ? 'blur-sm select-none' : ''}`}>
-                        <td className="px-5 py-3 font-mono text-gray-700">{row.ip}</td>
-                        <td className="px-5 py-3 text-gray-700 font-medium">{row.count}</td>
-                        <td className="px-5 py-3 text-gray-500 text-xs">{new Date(row.firstSeen).toLocaleString('ko-KR')}</td>
-                        <td className="px-5 py-3 text-gray-500 text-xs">{new Date(row.lastSeen).toLocaleString('ko-KR')}</td>
-                        <td className="px-5 py-3">
-                          <span className={`text-xs font-medium px-2 py-1 rounded-full ${statusClass}`}>{status}</span>
-                          {blockReachedLimit && (
-                            <span className="block text-[10px] text-red-600 font-semibold mt-1">⚠️ 차단 대기 중 — 광고비 소진 중</span>
-                          )}
-                        </td>
-                        <td className="px-5 py-3">
-                          {status !== '차단됨' && (
-                            <button
-                              onClick={() => handleBlock(row.ip)}
-                              className={`text-xs px-2.5 py-1 rounded border ${
-                                blockReachedLimit
-                                  ? 'border-gray-200 text-gray-400 cursor-not-allowed'
-                                  : 'border-red-200 text-red-600 hover:bg-red-50'
-                              }`}
-                            >
-                              차단
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                {topIps.map((row, idx) => {
+                  const first = row.first_seen ?? row.firstSeen;
+                  const last = row.last_seen ?? row.lastSeen;
+                  const status = row.status ?? (row.count >= 10 ? '차단됨' : row.count >= 5 ? '의심' : '정상');
+                  const statusClass =
+                    status === '차단됨' ? 'bg-red-50 text-red-600' :
+                    status === '의심' ? 'bg-amber-50 text-amber-600' :
+                    'bg-green-50 text-green-600';
+                  const blockReachedLimit = isFree && idx >= limits.ipBlockPerMonth && status === '의심';
+                  return (
+                    <tr key={`${row.ip}-${idx}`} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="px-5 py-3 font-mono text-gray-700">{row.ip}</td>
+                      <td className="px-3 py-3 text-right text-gray-700 font-medium">{num(row.count)}</td>
+                      <td className="px-3 py-3 text-center">
+                        <span className={`text-xs font-medium px-2 py-1 rounded-full ${statusClass}`}>
+                          {status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-xs text-gray-500">
+                        {first ? new Date(first).toLocaleString('ko-KR') : '-'}
+                      </td>
+                      <td className="px-3 py-3 text-xs text-gray-500">
+                        {last ? new Date(last).toLocaleString('ko-KR') : '-'}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        {status !== '차단됨' && (
+                          <button
+                            onClick={() => handleBlock(row.ip)}
+                            className={`text-xs px-2.5 py-1 rounded border ${
+                              blockReachedLimit
+                                ? 'border-gray-200 text-gray-400 cursor-not-allowed'
+                                : 'border-red-200 text-red-600 hover:bg-red-50'
+                            }`}
+                          >
+                            차단
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
+        )}
+      </div>
+
+      {/* Recent logs */}
+      <div className="bg-white rounded-xl border border-gray-200">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-900">최근 클릭 로그</h3>
+        </div>
+        {loading ? (
+          <div className="p-8 text-center text-sm text-gray-400">
+            <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+          </div>
+        ) : recentLogs.length === 0 ? (
+          <div className="p-8 text-center text-sm text-gray-400">로그가 없습니다</div>
         ) : (
-          <div className="p-8 text-center text-gray-400 text-sm">수집된 클릭 데이터가 없습니다</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-gray-400 border-b border-gray-100 bg-gray-50">
+                  <th className="px-5 py-3 font-medium">시간</th>
+                  <th className="px-3 py-3 font-medium">IP</th>
+                  <th className="px-3 py-3 font-medium">키워드</th>
+                  <th className="px-3 py-3 font-medium text-center">기기</th>
+                  <th className="px-3 py-3 font-medium text-center">상태</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentLogs.map((row, idx) => {
+                  const t = row.time ?? row.created_at;
+                  const dev = (row.device ?? '').toLowerCase();
+                  const status = row.status ?? '정상';
+                  const statusClass =
+                    status === '차단' || status === 'blocked' ? 'bg-red-50 text-red-600' :
+                    status === '의심' || status === 'suspicious' ? 'bg-amber-50 text-amber-600' :
+                    'bg-green-50 text-green-600';
+                  return (
+                    <tr key={row.id ?? `${row.ip}-${idx}`} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">
+                        {t ? new Date(t).toLocaleString('ko-KR') : '-'}
+                      </td>
+                      <td className="px-3 py-3 font-mono text-xs text-gray-700">{row.ip}</td>
+                      <td className="px-3 py-3 text-gray-700">{row.keyword || <span className="text-gray-300">-</span>}</td>
+                      <td className="px-3 py-3 text-center">
+                        {dev.includes('mobile') || dev === 'm' ? (
+                          <Smartphone className="w-3.5 h-3.5 text-violet-500 inline" />
+                        ) : dev.includes('pc') ? (
+                          <Monitor className="w-3.5 h-3.5 text-blue-500 inline" />
+                        ) : (
+                          <span className="text-gray-300 text-xs">-</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <span className={`text-[10px] font-medium px-2 py-1 rounded-full ${statusClass}`}>
+                          {status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -239,7 +417,10 @@ export function ClickFraudPage() {
           <Code className="w-5 h-5 text-blue-600" />
           <h3 className="font-semibold text-gray-900">스크립트 설치 가이드</h3>
         </div>
-        <p className="text-sm text-gray-500 mb-4">아래 스크립트를 광고 랜딩 페이지의 <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">&lt;head&gt;</code> 안에 붙여넣으세요.</p>
+        <p className="text-sm text-gray-500 mb-4">
+          아래 스크립트를 광고 랜딩 페이지의{' '}
+          <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">&lt;head&gt;</code> 안에 붙여넣으세요.
+        </p>
         <div className="bg-gray-50 rounded-lg p-3 flex items-center gap-2 mb-4">
           <code className="text-xs flex-1 overflow-x-auto text-gray-700 font-mono">{SCRIPT_TAG}</code>
           <button onClick={handleCopy} className="p-2 rounded hover:bg-gray-200 text-gray-500 shrink-0">
@@ -254,7 +435,11 @@ export function ClickFraudPage() {
           >
             {installCheck === 'checking' ? '확인 중...' : '설치 확인'}
           </button>
-          {installCheck === 'ok' && <span className="text-sm text-green-600 flex items-center gap-1"><Check className="w-4 h-4" /> Worker 정상 응답</span>}
+          {installCheck === 'ok' && (
+            <span className="text-sm text-green-600 flex items-center gap-1">
+              <Check className="w-4 h-4" /> Worker 정상 응답
+            </span>
+          )}
           {installCheck === 'fail' && <span className="text-sm text-red-600">Worker 응답 실패</span>}
         </div>
       </div>
