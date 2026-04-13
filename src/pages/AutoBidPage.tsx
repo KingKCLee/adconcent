@@ -31,6 +31,19 @@ interface CampaignGroup {
   groups?: { group_id: string; group_name: string }[];
 }
 
+interface GroupStrategy {
+  id?: number;
+  site_id?: string;
+  campaign_id: string;
+  group_id: string;
+  target_rank: number;
+  max_bid: number;
+  min_bid: number;
+  device: Device;
+  lowest_bid: number;
+  hourly_preset?: 'peak' | 'night' | 'all3' | null;
+}
+
 type Tab = 'keywords' | 'logs';
 
 interface HourSchedule {
@@ -161,6 +174,10 @@ export function AutoBidPage() {
 
   // Filter + selection state
   const [campaignsGroups, setCampaignsGroups] = useState<CampaignGroup[]>([]);
+  const [groupStrategies, setGroupStrategies] = useState<GroupStrategy[]>([]);
+  const [groupPanelOpen, setGroupPanelOpen] = useState(false);
+  const [activeCampaign, setActiveCampaign] = useState<string>('');
+  const [editingGroupKey, setEditingGroupKey] = useState<{ campaign_id: string; group_id: string; group_name: string } | null>(null);
   const [filterCampaign, setFilterCampaign] = useState<string>('all');
   const [filterGroup, setFilterGroup] = useState<string>('all');
   const [filterDevice, setFilterDevice] = useState<Device | 'all'>('all');
@@ -236,8 +253,24 @@ export function AutoBidPage() {
         ? data
         : data?.data ?? data?.campaigns ?? [];
       setCampaignsGroups(list);
+      if (list.length > 0 && !activeCampaign) setActiveCampaign(list[0].campaign_id);
     } catch {
       setCampaignsGroups([]);
+    }
+  };
+
+  const loadGroupStrategies = async () => {
+    if (!siteId) return;
+    try {
+      const data = await workerFetch<{ data?: GroupStrategy[]; strategies?: GroupStrategy[] } | GroupStrategy[]>(
+        `/naver/group-strategy?site_id=${siteId}`,
+      );
+      const list: GroupStrategy[] = Array.isArray(data)
+        ? data
+        : data?.data ?? data?.strategies ?? [];
+      setGroupStrategies(list);
+    } catch {
+      setGroupStrategies([]);
     }
   };
 
@@ -246,6 +279,7 @@ export function AutoBidPage() {
     if (tab === 'keywords') {
       loadKeywords();
       loadCampaignsGroups();
+      loadGroupStrategies();
     }
     if (tab === 'logs') loadLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -429,6 +463,23 @@ export function AutoBidPage() {
       setSortDir('desc');
     }
   };
+
+  const keywordCountsByGroup = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const k of keywords) {
+      const key = `${k.campaign_id ?? ''}::${k.group_id ?? ''}`;
+      map.set(key, (map.get(key) ?? 0) + 1);
+    }
+    return map;
+  }, [keywords]);
+
+  const strategyByGroupKey = useMemo(() => {
+    const map = new Map<string, GroupStrategy>();
+    for (const s of groupStrategies) {
+      map.set(`${s.campaign_id}::${s.group_id}`, s);
+    }
+    return map;
+  }, [groupStrategies]);
 
   const groupOptions = useMemo(() => {
     if (filterCampaign === 'all') {
@@ -629,6 +680,20 @@ export function AutoBidPage() {
         </div>
       )}
 
+      {tab === 'keywords' && (
+        <GroupStrategyPanel
+          open={groupPanelOpen}
+          onToggle={() => setGroupPanelOpen((v) => !v)}
+          campaignsGroups={campaignsGroups}
+          strategies={groupStrategies}
+          activeCampaign={activeCampaign}
+          setActiveCampaign={setActiveCampaign}
+          keywordCounts={keywordCountsByGroup}
+          onEditGroup={(g) => setEditingGroupKey(g)}
+          isFree={isFree}
+        />
+      )}
+
       {tab === 'keywords' ? (
         <KeywordsTab
           keywords={sortedKeywords}
@@ -671,6 +736,7 @@ export function AutoBidPage() {
           onUpdateDevice={updateDeviceInline}
           onToggleLowestBid={toggleLowestBidInline}
           onQuickBid={quickBid}
+          strategyByGroupKey={strategyByGroupKey}
         />
       ) : (
         <LogsTab
@@ -708,6 +774,29 @@ export function AutoBidPage() {
             setEditTarget(null);
             loadKeywords();
             showToast('수정 완료');
+          }}
+        />
+      )}
+
+      {/* Group strategy modal */}
+      {editingGroupKey && (
+        <GroupStrategyModal
+          siteId={siteId}
+          campaignId={editingGroupKey.campaign_id}
+          groupId={editingGroupKey.group_id}
+          groupName={editingGroupKey.group_name}
+          existing={strategyByGroupKey.get(`${editingGroupKey.campaign_id}::${editingGroupKey.group_id}`)}
+          keywordCount={keywordCountsByGroup.get(`${editingGroupKey.campaign_id}::${editingGroupKey.group_id}`) ?? 0}
+          onClose={() => setEditingGroupKey(null)}
+          onSaved={() => {
+            setEditingGroupKey(null);
+            loadGroupStrategies();
+            showToast('그룹 전략 저장 완료');
+          }}
+          onApplyToAll={(n) => {
+            setEditingGroupKey(null);
+            loadKeywords();
+            showToast(`${n}개 키워드에 그룹 전략 적용 완료`);
           }}
         />
       )}
@@ -819,6 +908,7 @@ interface KeywordsTabProps {
   onUpdateDevice: (kw: KeywordStat) => void;
   onToggleLowestBid: (kw: KeywordStat) => void;
   onQuickBid: (kw: KeywordStat, bidAmt: number) => void;
+  strategyByGroupKey: Map<string, GroupStrategy>;
 }
 
 function KeywordsTab(props: KeywordsTabProps) {
@@ -831,7 +921,7 @@ function KeywordsTab(props: KeywordsTabProps) {
     filterDevice, setFilterDevice, filterStatus, setFilterStatus,
     searchText, setSearchText,
     selectedIds, onToggleSelect, onToggleSelectAll, onOpenBulk,
-    onUpdateDevice, onToggleLowestBid, onQuickBid,
+    onUpdateDevice, onToggleLowestBid, onQuickBid, strategyByGroupKey,
   } = props;
   const eligibleSelectable = keywords.filter((k) => k.bid_setting_id != null);
   const allSelected =
@@ -1050,7 +1140,33 @@ function KeywordsTab(props: KeywordsTabProps) {
                         className="rounded border-gray-300"
                       />
                     </td>
-                    <td className="px-4 py-3 font-medium text-gray-800">{kw.keyword}</td>
+                    <td className="px-4 py-3 font-medium text-gray-800">
+                      {(() => {
+                        const groupKey = `${kw.campaign_id ?? ''}::${kw.group_id ?? ''}`;
+                        const groupStrat = strategyByGroupKey.get(groupKey);
+                        const hasIndividual = !!kw.bid_setting_id;
+                        if (hasIndividual) {
+                          return (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" title="개별설정" />
+                              {kw.keyword}
+                            </span>
+                          );
+                        }
+                        if (groupStrat) {
+                          return (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span
+                                className="w-1.5 h-1.5 rounded-full bg-gray-400"
+                                title={`그룹 상속: ${kw.group_name ?? kw.group_id ?? ''}`}
+                              />
+                              {kw.keyword}
+                            </span>
+                          );
+                        }
+                        return kw.keyword;
+                      })()}
+                    </td>
                     <td className="px-2 py-3 text-center">
                       <button
                         onClick={() => onUpdateDevice(kw)}
@@ -1883,6 +1999,329 @@ function PreviewModal(props: {
             {applying && <Loader2 className="w-4 h-4 animate-spin" />}
             실제 적용 ({changed}개)
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Group Strategy Panel ---------- */
+
+function GroupStrategyPanel(props: {
+  open: boolean;
+  onToggle: () => void;
+  campaignsGroups: CampaignGroup[];
+  strategies: GroupStrategy[];
+  activeCampaign: string;
+  setActiveCampaign: (id: string) => void;
+  keywordCounts: Map<string, number>;
+  onEditGroup: (g: { campaign_id: string; group_id: string; group_name: string }) => void;
+  isFree: boolean;
+}) {
+  const {
+    open, onToggle, campaignsGroups, strategies, activeCampaign, setActiveCampaign,
+    keywordCounts, onEditGroup, isFree,
+  } = props;
+
+  const stratMap = useMemo(() => {
+    const m = new Map<string, GroupStrategy>();
+    for (const s of strategies) m.set(`${s.campaign_id}::${s.group_id}`, s);
+    return m;
+  }, [strategies]);
+
+  const activeGroups = campaignsGroups.find((c) => c.campaign_id === activeCampaign)?.groups ?? [];
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Settings2 className="w-4 h-4 text-violet-600" />
+          <h3 className="font-semibold text-gray-900">그룹별 전략 설정</h3>
+          <span className="text-xs text-gray-400">({strategies.length}개 그룹 설정됨)</span>
+        </div>
+        <span className="text-xs text-gray-400">{open ? '▲ 접기' : '▼ 펼치기'}</span>
+      </button>
+
+      {open && (
+        <div className="border-t border-gray-100">
+          <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center gap-2 flex-wrap">
+            {campaignsGroups.length === 0 ? (
+              <span className="text-xs text-gray-400">캠페인이 없습니다</span>
+            ) : (
+              campaignsGroups.map((c) => (
+                <button
+                  key={c.campaign_id}
+                  onClick={() => setActiveCampaign(c.campaign_id)}
+                  className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                    activeCampaign === c.campaign_id
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:border-blue-300'
+                  }`}
+                >
+                  {c.campaign_name}
+                </button>
+              ))
+            )}
+          </div>
+
+          <div className="p-5">
+            {activeGroups.length === 0 ? (
+              <div className="text-center text-xs text-gray-400 py-6">선택된 캠페인에 그룹이 없습니다</div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {activeGroups.map((g) => {
+                  const key = `${activeCampaign}::${g.group_id}`;
+                  const strat = stratMap.get(key);
+                  const kwCount = keywordCounts.get(key) ?? 0;
+                  return (
+                    <div
+                      key={g.group_id}
+                      className="bg-white border border-gray-200 rounded-lg p-4 hover:border-blue-300 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-3">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{g.group_name}</p>
+                        <button
+                          onClick={() =>
+                            onEditGroup({ campaign_id: activeCampaign, group_id: g.group_id, group_name: g.group_name })
+                          }
+                          disabled={isFree}
+                          className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                        >
+                          {isFree ? <Lock className="w-3 h-3" /> : '설정'}
+                        </button>
+                      </div>
+                      {strat ? (
+                        <div className="space-y-1 text-xs text-gray-600">
+                          <p>
+                            목표순위: <span className="font-semibold text-gray-900">{strat.target_rank}위</span> · 최대:{' '}
+                            <span className="font-semibold text-gray-900">{won(strat.max_bid)}</span>
+                          </p>
+                          <p>
+                            매체:{' '}
+                            <span className="font-semibold text-gray-900">
+                              {strat.device === 'ALL' ? '전체' : strat.device === 'PC' ? 'PC' : '모바일'}
+                            </span>{' '}
+                            · 최저가입찰:{' '}
+                            <span className={`font-semibold ${strat.lowest_bid ? 'text-green-600' : 'text-gray-400'}`}>
+                              {strat.lowest_bid ? 'ON' : 'OFF'}
+                            </span>
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-400 italic">전략 미설정</p>
+                      )}
+                      <p className="text-[11px] text-gray-400 mt-2 pt-2 border-t border-gray-100">키워드 {kwCount}개</p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Group Strategy Modal ---------- */
+
+function GroupStrategyModal(props: {
+  siteId: string;
+  campaignId: string;
+  groupId: string;
+  groupName: string;
+  existing?: GroupStrategy;
+  keywordCount: number;
+  onClose: () => void;
+  onSaved: () => void;
+  onApplyToAll: (n: number) => void;
+}) {
+  const { siteId, campaignId, groupId, groupName, existing, keywordCount, onClose, onSaved, onApplyToAll } = props;
+  const [targetRank, setTargetRank] = useState<number>(existing?.target_rank ?? 3);
+  const [maxBid, setMaxBid] = useState<number>(existing?.max_bid ?? 3000);
+  const [minBid, setMinBid] = useState<number>(existing?.min_bid ?? 70);
+  const [device, setDevice] = useState<Device>(existing?.device ?? 'ALL');
+  const [lowestBid, setLowestBid] = useState<boolean>(!!existing?.lowest_bid);
+  const [hourlyPreset, setHourlyPreset] = useState<'peak' | 'night' | 'all3' | ''>(existing?.hourly_preset ?? '');
+  const [saving, setSaving] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const buildPayload = () => ({
+    site_id: siteId,
+    campaign_id: campaignId,
+    group_id: groupId,
+    target_rank: targetRank,
+    max_bid: maxBid,
+    min_bid: minBid,
+    device,
+    lowest_bid: lowestBid ? 1 : 0,
+    hourly_preset: hourlyPreset || null,
+  });
+
+  const handleSave = async () => {
+    setError(null);
+    setSaving(true);
+    try {
+      await workerFetch('/naver/group-strategy', {
+        method: 'POST',
+        body: JSON.stringify(buildPayload()),
+      });
+      onSaved();
+    } catch (e: any) {
+      setError(e?.message ?? '저장 실패');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleApplyToAll = async () => {
+    if (!confirm(`이 그룹의 ${keywordCount}개 키워드에 전략을 적용합니다. 계속하시겠습니까?`)) return;
+    setError(null);
+    setApplying(true);
+    try {
+      await workerFetch('/naver/group-strategy', {
+        method: 'POST',
+        body: JSON.stringify(buildPayload()),
+      });
+      await workerFetch('/naver/group-strategy/apply', {
+        method: 'POST',
+        body: JSON.stringify({
+          site_id: siteId,
+          campaign_id: campaignId,
+          group_id: groupId,
+        }),
+      });
+      onApplyToAll(keywordCount);
+    } catch (e: any) {
+      setError(e?.message ?? '적용 실패');
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 relative">
+        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+          <X className="w-5 h-5" />
+        </button>
+        <h3 className="text-lg font-bold text-gray-900 mb-1">그룹 전략 설정</h3>
+        <p className="text-xs text-gray-500 mb-5">{groupName} · 키워드 {keywordCount}개</p>
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">목표 순위</label>
+              <select
+                value={targetRank}
+                onChange={(e) => setTargetRank(Number(e.target.value))}
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {Array.from({ length: 15 }, (_, i) => i + 1).map((n) => (
+                  <option key={n} value={n}>{n}위</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">매체</label>
+              <select
+                value={device}
+                onChange={(e) => setDevice(e.target.value as Device)}
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="ALL">전체</option>
+                <option value="PC">PC</option>
+                <option value="M">모바일</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">최대 입찰가 (원)</label>
+              <input
+                type="number"
+                value={maxBid}
+                onChange={(e) => setMaxBid(Number(e.target.value))}
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">최소 입찰가 (원)</label>
+              <input
+                type="number"
+                value={minBid}
+                onChange={(e) => setMinBid(Number(e.target.value))}
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={lowestBid}
+              onChange={(e) => setLowestBid(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            최저가 입찰 사용
+          </label>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">시간대 전략 (간단)</label>
+            <div className="flex items-center gap-2 flex-wrap">
+              {([
+                { id: '', label: '미사용' },
+                { id: 'peak', label: '피크타임 (9~18시)' },
+                { id: 'night', label: '야간 중지' },
+                { id: 'all3', label: '전시간 3위' },
+              ] as { id: '' | 'peak' | 'night' | 'all3'; label: string }[]).map((p) => (
+                <button
+                  key={p.id || 'none'}
+                  onClick={() => setHourlyPreset(p.id)}
+                  className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                    hourlyPreset === p.id
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-200 hover:border-blue-300'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {error && (
+            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-2 mt-6">
+          <button
+            onClick={handleApplyToAll}
+            disabled={applying || saving || keywordCount === 0}
+            className="w-full py-2.5 text-sm font-semibold text-white bg-violet-600 hover:bg-violet-700 rounded-lg disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {applying && <Loader2 className="w-4 h-4 animate-spin" />}
+            전체 키워드에 적용 ({keywordCount}개)
+          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="flex-1 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg"
+            >
+              취소
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving || applying}
+              className="flex-1 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              저장
+            </button>
+          </div>
         </div>
       </div>
     </div>
