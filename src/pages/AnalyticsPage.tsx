@@ -214,8 +214,8 @@ export function AnalyticsPage() {
     try {
       await fn();
       setUsage(u => u + 1);
-    } catch (e) {
-      setError((e as Error).message);
+    } catch {
+      setError('분석 중 오류가 발생했습니다');
     } finally {
       setLoading(false);
     }

@@ -85,7 +85,6 @@ export function DashboardPage() {
   const [dismissedSugs, setDismissedSugs] = useState<string[]>([]);
   const [aiSuggestions, setAiSuggestions] = useState<AiSuggestion[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
-  const [aiFallback, setAiFallback] = useState(false);
 
   useEffect(() => {
     if (!siteId) return;
@@ -144,11 +143,9 @@ export function DashboardPage() {
       })
         .then((res) => {
           if (res?.warning === 'fallback_mode') {
-            setAiFallback(true);
             setAiSuggestions([]);
             return;
           }
-          setAiFallback(false);
           const sugList = res?.data?.suggestions ?? [];
           if (sugList.length > 0) {
             setAiSuggestions(sugList);
@@ -559,11 +556,6 @@ export function DashboardPage() {
               {aiLoading ? (
                 <div className="py-6 text-center">
                   <Loader2 className="w-4 h-4 animate-spin text-violet-500 mx-auto" />
-                </div>
-              ) : aiFallback ? (
-                <div className="py-4 text-center">
-                  <p className="text-xs text-amber-600 font-medium mb-1">AI 분석 준비 중</p>
-                  <p className="text-[10px] text-gray-400">관리자가 설정을 완료하면 활성화됩니다</p>
                 </div>
               ) : visibleSugs.length === 0 ? (
                 <p className="text-xs text-gray-400 text-center py-4">제안 없음</p>
