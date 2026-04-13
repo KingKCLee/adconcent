@@ -40,6 +40,8 @@ interface HourSchedule {
 interface KeywordStat {
   keyword: string;
   keyword_id?: string;
+  ncc_keyword_id?: string;
+  ncc_adgroup_id?: string;
   campaign_id?: string;
   campaign_name?: string;
   group_id?: string;
@@ -53,12 +55,17 @@ interface KeywordStat {
   is_active?: number;
   strategy?: string;
   device?: Device;
-  region?: string | null;
   lowest_bid?: number;
   lowest_bid_wait_min?: number;
   ad_status?: string;
   user_locked?: number;
   hourly_schedule?: HourSchedule | string;
+  qi_grade?: number | null;
+  monthly_pc?: number | null;
+  monthly_mobile?: number | null;
+  bid_rank1?: number | null;
+  bid_rank3?: number | null;
+  bid_rank5?: number | null;
 }
 
 interface BidLog {
@@ -439,6 +446,41 @@ export function AutoBidPage() {
     }
   };
 
+  const quickBid = async (kw: KeywordStat, bidAmt: number) => {
+    if (isFree) {
+      setShowUpgrade(true);
+      return;
+    }
+    if (!kw.ncc_keyword_id && !kw.keyword_id) {
+      showToast('네이버 키워드 ID가 없어 즉시 입찰할 수 없습니다');
+      return;
+    }
+    if (!confirm(`${won(bidAmt)}으로 즉시 입찰하시겠습니까?`)) return;
+    const id = kw.ncc_keyword_id ?? kw.keyword_id;
+    try {
+      await workerFetch('/naver', {
+        method: 'POST',
+        body: JSON.stringify({
+          site_id: siteId,
+          method: 'PUT',
+          path: `/ncc/keywords/${id}`,
+          body: {
+            nccKeywordId: id,
+            nccAdgroupId: kw.ncc_adgroup_id ?? kw.group_id,
+            bidAmt,
+            useGroupBidAmt: false,
+          },
+        }),
+      });
+      setKeywords((prev) =>
+        prev.map((k) => (k.keyword === kw.keyword ? { ...k, current_bid: bidAmt } : k)),
+      );
+      showToast(`입찰가 ${won(bidAmt)}으로 변경됨`);
+    } catch (e: any) {
+      showToast(`입찰 실패: ${e?.message ?? ''}`);
+    }
+  };
+
   const toggleLowestBidInline = async (kw: KeywordStat) => {
     if (isFree) {
       setShowUpgrade(true);
@@ -566,6 +608,7 @@ export function AutoBidPage() {
           onOpenBulk={() => setShowBulk(true)}
           onUpdateDevice={updateDeviceInline}
           onToggleLowestBid={toggleLowestBidInline}
+          onQuickBid={quickBid}
         />
       ) : (
         <LogsTab
@@ -679,6 +722,7 @@ interface KeywordsTabProps {
   onOpenBulk: () => void;
   onUpdateDevice: (kw: KeywordStat) => void;
   onToggleLowestBid: (kw: KeywordStat) => void;
+  onQuickBid: (kw: KeywordStat, bidAmt: number) => void;
 }
 
 function KeywordsTab(props: KeywordsTabProps) {
@@ -690,7 +734,7 @@ function KeywordsTab(props: KeywordsTabProps) {
     filterDevice, setFilterDevice, filterStatus, setFilterStatus,
     searchText, setSearchText,
     selectedIds, onToggleSelect, onToggleSelectAll, onOpenBulk,
-    onUpdateDevice, onToggleLowestBid,
+    onUpdateDevice, onToggleLowestBid, onQuickBid,
   } = props;
   const eligibleSelectable = keywords.filter((k) => k.bid_setting_id != null);
   const allSelected =
@@ -867,9 +911,13 @@ function KeywordsTab(props: KeywordsTabProps) {
                 </th>
                 <th className="px-4 py-3 font-medium">키워드</th>
                 <th className="px-2 py-3 font-medium text-center">매체</th>
-                <th className="px-2 py-3 font-medium text-center">지역</th>
+                <th className="px-2 py-3 font-medium text-right">PC검색</th>
+                <th className="px-2 py-3 font-medium text-right">MO검색</th>
+                <th className="px-2 py-3 font-medium text-center">품질</th>
                 <th className="px-3 py-3 font-medium text-center">현재순위</th>
-                <th className="px-3 py-3 font-medium text-center">목표순위</th>
+                <th className="px-2 py-3 font-medium text-right">1위</th>
+                <th className="px-2 py-3 font-medium text-right">3위</th>
+                <th className="px-2 py-3 font-medium text-right">5위</th>
                 <th className="px-3 py-3 font-medium text-right">현재입찰가</th>
                 <th className="px-3 py-3 font-medium text-center">상태</th>
                 <th className="px-3 py-3 font-medium text-center">최저가</th>
@@ -917,8 +965,28 @@ function KeywordsTab(props: KeywordsTabProps) {
                         )}
                       </button>
                     </td>
-                    <td className="px-2 py-3 text-center text-xs text-gray-500">
-                      {kw.region || <span className="text-gray-300">전국</span>}
+                    <td className="px-2 py-3 text-right text-xs text-gray-700">
+                      {kw.monthly_pc == null ? <span className="text-gray-300">-</span> : kw.monthly_pc.toLocaleString()}
+                    </td>
+                    <td className="px-2 py-3 text-right text-xs text-gray-700">
+                      {kw.monthly_mobile == null ? <span className="text-gray-300">-</span> : kw.monthly_mobile.toLocaleString()}
+                    </td>
+                    <td className="px-2 py-3 text-center">
+                      {kw.qi_grade == null ? (
+                        <span className="text-gray-300 text-xs">-</span>
+                      ) : (
+                        <span
+                          className={`inline-flex items-center justify-center w-6 h-6 rounded text-[11px] font-bold ${
+                            kw.qi_grade >= 7
+                              ? 'bg-green-100 text-green-700'
+                              : kw.qi_grade >= 4
+                              ? 'bg-blue-100 text-blue-700'
+                              : 'bg-red-100 text-red-700'
+                          }`}
+                        >
+                          {kw.qi_grade}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-center text-gray-700">
                       {kw.current_rank == null ? (
@@ -927,14 +995,37 @@ function KeywordsTab(props: KeywordsTabProps) {
                         `${kw.current_rank}위`
                       )}
                     </td>
-                    <td className="px-3 py-3 text-center">
-                      {kw.target_rank == null ? (
-                        <span className="text-gray-300">-</span>
-                      ) : (
-                        <span className="text-gray-600">{kw.target_rank}위</span>
+                    {[1, 3, 5].map((rank) => {
+                      const bid = rank === 1 ? kw.bid_rank1 : rank === 3 ? kw.bid_rank3 : kw.bid_rank5;
+                      const isTarget = kw.target_rank === rank;
+                      if (bid == null) {
+                        return (
+                          <td key={rank} className="px-2 py-3 text-right text-xs text-gray-300">-</td>
+                        );
+                      }
+                      return (
+                        <td key={rank} className="px-2 py-3 text-right">
+                          <button
+                            onClick={() => onQuickBid(kw, bid)}
+                            disabled={isFree}
+                            className={`text-xs font-medium px-1.5 py-0.5 rounded transition-colors ${
+                              isTarget
+                                ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                                : 'text-gray-700 hover:bg-gray-100'
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            title={`${won(bid)}으로 즉시 입찰`}
+                          >
+                            {won(bid)}
+                          </button>
+                        </td>
+                      );
+                    })}
+                    <td className="px-3 py-3 text-right text-gray-700">
+                      {won(kw.current_bid)}
+                      {kw.target_rank != null && (
+                        <span className="block text-[10px] text-gray-400">목표 {kw.target_rank}위</span>
                       )}
                     </td>
-                    <td className="px-3 py-3 text-right text-gray-700">{won(kw.current_bid)}</td>
                     <td className="px-3 py-3 text-center">
                       <span
                         title={status.tooltip}
@@ -1152,12 +1243,7 @@ function LogsTab(props: {
 
 /* ---------- Keyword Add/Edit Modal (Tabbed) ---------- */
 
-const REGIONS = [
-  '전국', '서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종',
-  '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주',
-];
-
-type FormTab = 'basic' | 'time' | 'region';
+type FormTab = 'basic' | 'time';
 
 function KeywordFormModal(props: {
   mode: 'add' | 'edit';
@@ -1177,7 +1263,6 @@ function KeywordFormModal(props: {
   const [device, setDevice] = useState<Device>((initial?.device as Device) ?? 'ALL');
   const [lowestBid, setLowestBid] = useState<boolean>(!!initial?.lowest_bid);
   const [lowestBidWaitMin, setLowestBidWaitMin] = useState<number>(initial?.lowest_bid_wait_min ?? 10);
-  const [region, setRegion] = useState<string>(initial?.region ?? '전국');
 
   const initialSchedule = (() => {
     const raw = initial?.hourly_schedule;
@@ -1220,7 +1305,6 @@ function KeywordFormModal(props: {
         device,
         lowest_bid: lowestBid ? 1 : 0,
         lowest_bid_wait_min: lowestBidWaitMin,
-        region,
         hourly_schedule: JSON.stringify(schedule),
       };
       if (mode === 'edit' && initial?.bid_setting_id) {
@@ -1273,7 +1357,6 @@ function KeywordFormModal(props: {
           {([
             { id: 'basic', label: '기본 설정' },
             { id: 'time', label: '시간대 전략' },
-            { id: 'region', label: '지역 설정' },
           ] as { id: FormTab; label: string }[]).map((t) => (
             <button
               key={t.id}
@@ -1443,29 +1526,6 @@ function KeywordFormModal(props: {
                 <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-green-500" /> 3~5위</div>
                 <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-yellow-400" /> 6~10위</div>
                 <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-gray-300" /> 중지</div>
-              </div>
-            </div>
-          )}
-
-          {formTab === 'region' && (
-            <div className="space-y-3">
-              <p className="text-xs text-gray-500">
-                선택한 지역 기준으로 순위를 측정합니다. "전국"은 기본값입니다.
-              </p>
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                {REGIONS.map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => setRegion(r)}
-                    className={`text-xs px-3 py-2 rounded border transition-colors ${
-                      region === r
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white text-gray-700 border-gray-200 hover:border-blue-300'
-                    }`}
-                  >
-                    {r}
-                  </button>
-                ))}
               </div>
             </div>
           )}

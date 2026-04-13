@@ -9,6 +9,10 @@ export const PLAN_LIMITS = {
     googleIntegration: false,
     metaIntegration: false,
     weeklyReport: false,
+    hourlyStrategy: false,
+    lowestBid: false,
+    bulkSettings: false,
+    estimateView: true,
   },
   starter: {
     ipBlockPerMonth: Infinity,
@@ -20,6 +24,10 @@ export const PLAN_LIMITS = {
     googleIntegration: false,
     metaIntegration: false,
     weeklyReport: false,
+    hourlyStrategy: true,
+    lowestBid: true,
+    bulkSettings: true,
+    estimateView: true,
   },
   growth: {
     ipBlockPerMonth: Infinity,
@@ -31,6 +39,10 @@ export const PLAN_LIMITS = {
     googleIntegration: true,
     metaIntegration: false,
     weeklyReport: true,
+    hourlyStrategy: true,
+    lowestBid: true,
+    bulkSettings: true,
+    estimateView: true,
   },
   pro: {
     ipBlockPerMonth: Infinity,
@@ -42,6 +54,10 @@ export const PLAN_LIMITS = {
     googleIntegration: true,
     metaIntegration: true,
     weeklyReport: true,
+    hourlyStrategy: true,
+    lowestBid: true,
+    bulkSettings: true,
+    estimateView: true,
   },
 } as const;
 
