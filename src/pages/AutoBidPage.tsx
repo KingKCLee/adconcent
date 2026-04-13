@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
   Zap,
@@ -187,6 +187,7 @@ export function AutoBidPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBulk, setShowBulk] = useState(false);
   const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number | null } | null>(null);
+  const estimateRefetchedRef = useRef(false);
 
   // Sort state
   const [sortKey, setSortKey] = useState<string>('current_bid');
@@ -278,6 +279,7 @@ export function AutoBidPage() {
   useEffect(() => {
     if (!siteId) return;
     if (tab === 'keywords') {
+      estimateRefetchedRef.current = false;
       loadKeywords();
       loadCampaignsGroups();
       loadGroupStrategies();
@@ -404,6 +406,24 @@ export function AutoBidPage() {
     showToast(`${done}개 키워드 등록 완료`);
     loadKeywords();
   };
+
+  // 견적가 자동 재조회: 첫 로드 완료 후 missing > 0이면 30초 뒤 1회 재조회
+  useEffect(() => {
+    if (tab !== 'keywords') return;
+    if (loadingKw) return;
+    if (keywords.length === 0) return;
+    if (estimateRefetchedRef.current) return;
+    const missing = keywords.filter(
+      (k) => k.bid_rank1 == null || k.bid_rank3 == null || k.bid_rank5 == null,
+    ).length;
+    if (missing === 0) return;
+    estimateRefetchedRef.current = true;
+    const timer = setTimeout(() => {
+      loadKeywords();
+    }, 30000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadingKw, keywords.length, tab]);
 
   const filteredKeywords = useMemo(() => {
     return keywords.filter((k) => {
@@ -1252,7 +1272,12 @@ function KeywordsTab(props: KeywordsTabProps) {
                       const isTarget = kw.target_rank === rank;
                       if (bid == null) {
                         return (
-                          <td key={rank} className="px-2 py-3 text-right text-xs text-gray-300">-</td>
+                          <td key={rank} className="px-2 py-3 text-right">
+                            <span
+                              className="inline-block w-12 h-3.5 rounded bg-gray-200 animate-pulse"
+                              title="견적가 조회 중..."
+                            />
+                          </td>
                         );
                       }
                       return (
