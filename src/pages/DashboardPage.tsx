@@ -8,6 +8,8 @@ import { workerFetch } from '@/lib/api';
 import { getLimits } from '@/lib/plans';
 import { supabase } from '@/lib/supabase';
 import { usePlan } from '@/hooks/usePlan';
+import { useSite } from '@/contexts/SiteContext';
+import { Loader2 } from 'lucide-react';
 
 interface StatsResponse {
   ips: { ip: string; count: number; events: { event: string; time: string }[] }[];
@@ -39,8 +41,6 @@ interface NaverStatsResponse {
 }
 
 const WORKER_URL = import.meta.env.VITE_ADCONCENT_WORKER_URL;
-const SITE_ID = 'hitbunyang';
-const SCRIPT_TAG = `<script src="${WORKER_URL}/collect?site_id=YOUR_SITE_ID" async></script>`;
 
 const won = (n: number) => `₩${(n ?? 0).toLocaleString()}`;
 const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
@@ -51,61 +51,30 @@ function monthRange() {
   return { since: fmtDate(first), until: fmtDate(today) };
 }
 
-const checklist = [
-  { label: '사이트 등록', done: false },
-  { label: '스크립트 설치', done: false },
-  { label: '네이버 계정 연결', done: false },
-  { label: '첫 입찰 설정', done: false },
-];
-
-// 임시 키워드 순위 트렌드 데이터
-const rankTrend = [
-  { rank: 1, keyword: '송도월드메르디앙예클라' },
-  { rank: 2, keyword: '송도월드메르디앙할인' },
-  { rank: 3, keyword: '송도월드메르디앙분양' },
-  { rank: 4, keyword: '송도월드메르디앙모아하우스' },
-  { rank: 5, keyword: '인천송도필드메르디앙' },
-  { rank: 6, keyword: '필드메르디앙송도' },
-  { rank: 7, keyword: '필드메르디앙송도예클라' },
-  { rank: 8, keyword: '-' },
-  { rank: 9, keyword: '-' },
-  { rank: 10, keyword: '-' },
-];
-
-
-// 임시 AI 제안
-const aiSuggestions = [
-  {
-    id: 'sug-1',
-    keyword: '송도월드메르디앙',
-    cpc: 3194,
-    suggestedBid: 2555,
-    title: '송도월드메르디앙 CPC 3,194원 → 입찰가 조절 제안',
-    desc: '현재 CPC가 높습니다. 입찰가를 2,555원으로 조절하면 비용 절감이 가능합니다.',
-  },
-  {
-    id: 'sug-2',
-    keyword: '필드메르디앙송도',
-    cpc: 5275,
-    suggestedBid: 4220,
-    title: '필드메르디앙송도 CPC 5,275원 → 입찰가 조절 제안',
-    desc: '현재 CPC가 높습니다. 입찰가를 4,220원으로 조절하면 비용 절감이 가능합니다.',
-  },
-];
+interface AiSuggestion {
+  id: string;
+  title: string;
+  desc: string;
+}
 
 // 최근 7일 날짜 (오늘 포함, 역순)
-function getLast7Days(): string[] {
-  const days: string[] = [];
+function getLast7Days(): { label: string; iso: string }[] {
+  const days: { label: string; iso: string }[] = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    days.push(`${d.getMonth() + 1}/${d.getDate()}`);
+    days.push({
+      label: `${d.getMonth() + 1}/${d.getDate()}`,
+      iso: fmtDate(d),
+    });
   }
   return days;
 }
 
 export function DashboardPage() {
-  const { plan } = usePlan(SITE_ID);
+  const { siteId, selected } = useSite();
+  const { plan } = usePlan();
+  const SCRIPT_TAG = `<script src="${WORKER_URL}/collect?site_id=${siteId || 'YOUR_SITE_ID'}" async></script>`;
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [bidLogs, setBidLogs] = useState<BidLog[]>([]);
   const [keywords, setKeywords] = useState<KeywordStat[]>([]);
@@ -114,17 +83,21 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [dismissedSugs, setDismissedSugs] = useState<string[]>([]);
+  const [aiSuggestions, setAiSuggestions] = useState<AiSuggestion[]>([]);
+  const [aiLoading, setAiLoading] = useState(false);
 
   useEffect(() => {
+    if (!siteId) return;
+    setLoading(true);
     const month = monthRange();
     Promise.allSettled([
-      workerFetch<StatsResponse>(`/stats?site_id=${SITE_ID}`),
-      workerFetch<{ logs?: BidLog[] } | BidLog[]>(`/naver/bid-logs?site_id=${SITE_ID}&limit=100`),
-      workerFetch<{ keywords?: KeywordStat[] } | KeywordStat[]>(`/naver/keyword-stats?site_id=${SITE_ID}`),
+      workerFetch<StatsResponse>(`/stats?site_id=${siteId}`),
+      workerFetch<{ logs?: BidLog[] } | BidLog[]>(`/naver/bid-logs?site_id=${siteId}&limit=100`),
+      workerFetch<{ keywords?: KeywordStat[] } | KeywordStat[]>(`/naver/keyword-stats?site_id=${siteId}`),
       workerFetch<NaverStatsResponse>('/naver/stats', {
         method: 'POST',
         body: JSON.stringify({
-          site_id: SITE_ID,
+          site_id: siteId,
           ids: [],
           timeRange: month,
           fields: ['clkCnt', 'impCnt', 'salesAmt', 'crto'],
@@ -150,7 +123,47 @@ export function DashboardPage() {
       }
       setLoading(false);
     });
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [siteId]);
+
+  // AI 전략 제안 - keyword_stats 상위 10개 기반
+  useEffect(() => {
+    if (!siteId || keywords.length === 0) return;
+    setAiLoading(true);
+    workerFetch<{ data?: { suggestions?: AiSuggestion[]; actions?: { text: string; level: string }[] } }>(
+      '/ai',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'briefing',
+          data: {
+            keywords: keywords.slice(0, 10).map((k) => ({
+              keyword: k.keyword,
+              current_rank: k.current_rank,
+              current_bid: k.current_bid,
+              target_rank: k.target_rank,
+            })),
+          },
+        }),
+      },
+    )
+      .then((res) => {
+        const sugList = res?.data?.suggestions ?? [];
+        if (sugList.length > 0) {
+          setAiSuggestions(sugList);
+        } else if (res?.data?.actions) {
+          setAiSuggestions(
+            res.data.actions.slice(0, 3).map((a, i) => ({
+              id: `ai-${i}`,
+              title: a.text,
+              desc: '',
+            })),
+          );
+        }
+      })
+      .catch(() => setAiSuggestions([]))
+      .finally(() => setAiLoading(false));
+  }, [siteId, keywords]);
 
   const totals = naverStats?.totals ?? { impCnt: 0, clkCnt: 0, salesAmt: 0, crto: 0 };
   const avgCpc = totals.clkCnt > 0 ? Math.round(totals.salesAmt / totals.clkCnt) : 0;
@@ -264,6 +277,44 @@ export function DashboardPage() {
   const last7Days = getLast7Days();
   const visibleSugs = aiSuggestions.filter(s => !dismissedSugs.includes(s.id));
 
+  // 키워드 순위 트렌드: 오늘은 keyword_stats, 과거는 bid_logs 날짜별 마지막 current_rank
+  const rankTrend = useMemo(() => {
+    const todayIso = fmtDate(new Date());
+    // 오늘 = keyword_stats current_rank 기준 정렬
+    const todayMap = new Map<string, number | null>();
+    for (const k of keywords) todayMap.set(k.keyword, k.current_rank);
+    const sorted = [...keywords]
+      .filter((k) => k.current_rank != null)
+      .sort((a, b) => (a.current_rank ?? 999) - (b.current_rank ?? 999))
+      .slice(0, 10);
+    // 과거 6일: bid_logs에서 date+keyword별 마지막 current_rank
+    const historyByDate = new Map<string, Map<string, number | null>>();
+    for (const log of bidLogs) {
+      const d = (log.created_at ?? '').slice(0, 10);
+      if (!d || d === todayIso) continue;
+      if (!historyByDate.has(d)) historyByDate.set(d, new Map());
+      historyByDate.get(d)!.set(log.keyword, log.current_rank);
+    }
+    return sorted.map((k) => {
+      const cells = last7Days.map((day) => {
+        if (day.iso === todayIso) return todayMap.get(k.keyword) ?? null;
+        return historyByDate.get(day.iso)?.get(k.keyword) ?? null;
+      });
+      return { keyword: k.keyword, currentRank: k.current_rank ?? 0, cells };
+    });
+  }, [keywords, bidLogs, last7Days]);
+
+  // 빠른 설정 체크리스트 (실데이터)
+  const checklist = useMemo(
+    () => [
+      { label: '사이트 등록', done: !!siteId },
+      { label: '스크립트 설치', done: !!selected?.script_installed },
+      { label: '네이버 계정 연결', done: !!selected?.naver_customer_id },
+      { label: '첫 입찰 설정', done: bidLogs.length > 0 },
+    ],
+    [siteId, selected, bidLogs],
+  );
+
   return (
     <div className="space-y-6">
       {/* KPI Cards */}
@@ -374,44 +425,52 @@ export function DashboardPage() {
               <h3 className="font-semibold text-gray-900">키워드 순위 트렌드</h3>
               <span className="text-xs text-gray-400">최근 7일</span>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
-                    <th className="px-4 py-2 font-medium w-12">순위</th>
-                    <th className="px-4 py-2 font-medium">키워드</th>
-                    {last7Days.map((d, i) => (
-                      <th key={i} className="px-2 py-2 font-medium text-center w-12">{d}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rankTrend.map((row) => (
-                    <tr key={row.rank} className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="px-4 py-2.5">
-                        <span className={`text-xs font-bold px-2 py-1 rounded ${
-                          row.rank <= 3 ? 'bg-blue-100 text-blue-700' :
-                          row.rank <= 7 ? 'bg-gray-100 text-gray-700' :
-                          'bg-gray-50 text-gray-400'
-                        }`}>{row.rank}위</span>
-                      </td>
-                      <td className="px-4 py-2.5 text-gray-700 truncate max-w-[200px]">{row.keyword}</td>
-                      {last7Days.map((_, i) => (
-                        <td key={i} className="px-2 py-2.5 text-center">
-                          {row.keyword !== '-' && (
-                            <div className={`w-1.5 h-1.5 rounded-full mx-auto ${
-                              row.rank <= 3 ? 'bg-blue-500' :
-                              row.rank <= 7 ? 'bg-gray-400' :
-                              'bg-gray-200'
-                            }`} />
-                          )}
-                        </td>
+            {rankTrend.length === 0 ? (
+              <div className="p-8 text-center text-sm text-gray-400">
+                {loading ? '불러오는 중...' : '키워드 데이터가 없습니다'}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
+                      <th className="px-4 py-2 font-medium w-12">순위</th>
+                      <th className="px-4 py-2 font-medium">키워드</th>
+                      {last7Days.map((d) => (
+                        <th key={d.iso} className="px-2 py-2 font-medium text-center w-12">{d.label}</th>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {rankTrend.map((row) => (
+                      <tr key={row.keyword} className="border-b border-gray-50 hover:bg-gray-50">
+                        <td className="px-4 py-2.5">
+                          <span className={`text-xs font-bold px-2 py-1 rounded ${
+                            row.currentRank <= 3 ? 'bg-blue-100 text-blue-700' :
+                            row.currentRank <= 7 ? 'bg-gray-100 text-gray-700' :
+                            'bg-gray-50 text-gray-400'
+                          }`}>{row.currentRank}위</span>
+                        </td>
+                        <td className="px-4 py-2.5 text-gray-700 truncate max-w-[200px]">{row.keyword}</td>
+                        {row.cells.map((rank, i) => (
+                          <td key={i} className="px-2 py-2.5 text-center">
+                            {rank == null ? (
+                              <span className="text-gray-300 text-[10px]">-</span>
+                            ) : (
+                              <div className={`w-1.5 h-1.5 rounded-full mx-auto ${
+                                rank <= 3 ? 'bg-blue-500' :
+                                rank <= 7 ? 'bg-gray-400' :
+                                'bg-gray-200'
+                              }`} />
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
 
@@ -469,7 +528,11 @@ export function DashboardPage() {
               <span className="text-[10px] font-bold bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full">Claude AI</span>
             </div>
             <div className="p-3 space-y-2">
-              {visibleSugs.length === 0 ? (
+              {aiLoading ? (
+                <div className="py-6 text-center">
+                  <Loader2 className="w-4 h-4 animate-spin text-violet-500 mx-auto" />
+                </div>
+              ) : visibleSugs.length === 0 ? (
                 <p className="text-xs text-gray-400 text-center py-4">제안 없음</p>
               ) : visibleSugs.map((sug) => (
                 <div key={sug.id} className="bg-violet-50 border border-violet-100 rounded-lg p-3">

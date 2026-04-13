@@ -19,8 +19,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { workerFetch } from '@/lib/api';
-
-const SITE_ID = 'hitbunyang';
+import { useSite } from '@/contexts/SiteContext';
 
 type RangeKey = 'today' | 'yesterday' | '7d' | '30d' | 'custom';
 
@@ -86,6 +85,7 @@ function rangeToDates(r: RangeKey, custom?: { since: string; until: string }) {
 }
 
 export function StatsPage() {
+  const { siteId } = useSite();
   const [range, setRange] = useState<RangeKey>('7d');
   const [customSince, setCustomSince] = useState<string>(fmtDate(new Date()));
   const [customUntil, setCustomUntil] = useState<string>(fmtDate(new Date()));
@@ -102,20 +102,58 @@ export function StatsPage() {
   );
 
   const loadStats = async () => {
+    if (!siteId) return;
     setLoading(true);
     setError(null);
     try {
+      // 1단계: 캠페인 목록 조회
+      let campaignIds: string[] = [];
+      const campaignNames = new Map<string, string>();
+      try {
+        const campRes = await workerFetch<{ data?: any; campaigns?: any[] }>('/naver', {
+          method: 'POST',
+          body: JSON.stringify({
+            site_id: siteId,
+            method: 'GET',
+            path: '/ncc/campaigns',
+          }),
+        });
+        const list: any[] = Array.isArray(campRes?.data)
+          ? campRes.data
+          : Array.isArray(campRes?.campaigns)
+          ? campRes.campaigns!
+          : [];
+        for (const c of list) {
+          const id = c.nccCampaignId ?? c.campaignId ?? c.id;
+          if (id) {
+            campaignIds.push(id);
+            campaignNames.set(id, c.name ?? c.campaignName ?? id);
+          }
+        }
+      } catch {
+        // 캠페인 조회 실패 시 빈 ids로 stats 호출 (Worker가 전체 처리하도록)
+      }
+
+      // 2단계: 통계 조회
       const res = await workerFetch<NaverStatsResponse>('/naver/stats', {
         method: 'POST',
         body: JSON.stringify({
-          site_id: SITE_ID,
-          ids: [],
+          site_id: siteId,
+          ids: campaignIds,
           timeRange: { since: dates.since, until: dates.until },
           fields: ['clkCnt', 'impCnt', 'salesAmt', 'crto'],
           idType: 'campaign',
           timeUnit: 'day',
         }),
       });
+
+      // 캠페인명 매핑
+      if (res.campaigns && campaignNames.size > 0) {
+        res.campaigns = res.campaigns.map((c: any) => ({
+          ...c,
+          name: campaignNames.get(c.campaign_id ?? c.id) ?? c.name ?? c.campaign_id,
+        }));
+      }
       setStats(res);
     } catch (e: any) {
       setError(e?.message ?? '실적 조회 실패');
@@ -126,10 +164,11 @@ export function StatsPage() {
   };
 
   const loadKeywords = async () => {
+    if (!siteId) return;
     setKeywordsLoading(true);
     try {
       const data = await workerFetch<{ keywords?: KeywordStat[] } | KeywordStat[]>(
-        `/naver/keyword-stats?site_id=${SITE_ID}`,
+        `/naver/keyword-stats?site_id=${siteId}`,
       );
       const list = Array.isArray(data) ? data : data?.keywords ?? [];
       setKeywords(list);
@@ -143,11 +182,12 @@ export function StatsPage() {
   useEffect(() => {
     loadStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dates.since, dates.until]);
+  }, [dates.since, dates.until, siteId]);
 
   useEffect(() => {
     loadKeywords();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [siteId]);
 
   const totals = useMemo(() => {
     if (stats?.totals) return stats.totals;

@@ -1,10 +1,11 @@
+import { useState, useRef, useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { usePlan } from '@/hooks/usePlan';
+import { SiteProvider, useSite } from '@/contexts/SiteContext';
 import {
   LayoutDashboard, TrendingUp, ShoppingBag, ShieldAlert,
   Sparkles, BarChart3, FileText, Globe, Play,
-  Settings, CreditCard, LogOut, Bell, ChevronDown,
+  Settings, CreditCard, LogOut, Bell, ChevronDown, Check,
 } from 'lucide-react';
 
 const menuGroups = [
@@ -62,11 +63,31 @@ const PLAN_BADGE_COLOR: Record<string, string> = {
 };
 
 export function DashboardLayout() {
+  return (
+    <SiteProvider>
+      <DashboardLayoutInner />
+    </SiteProvider>
+  );
+}
+
+function DashboardLayoutInner() {
   const { user, signOut } = useAuth();
   const location = useLocation();
   const pageTitle = pageTitles[location.pathname] || '대시보드';
-  const { plan } = usePlan();
+  const { sites, siteId, siteDomain, plan, setSiteId, isLoading: siteLoading } = useSite();
   const planLabel = plan.charAt(0).toUpperCase() + plan.slice(1);
+  const [siteDropdownOpen, setSiteDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setSiteDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `flex items-center gap-3 px-3 py-2 rounded-md text-[13px] transition-all ${
@@ -147,10 +168,50 @@ export function DashboardLayout() {
             <button className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors">
               <Bell className="w-4 h-4" />
             </button>
-            <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">
-              <span>hitbunyang</span>
-              <ChevronDown className="w-3 h-3" />
-            </button>
+            <div className="relative" ref={dropdownRef}>
+              <button
+                onClick={() => setSiteDropdownOpen((v) => !v)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 min-w-[140px]"
+              >
+                <span className="truncate max-w-[120px]">
+                  {siteLoading ? '불러오는 중...' : siteDomain || siteId || '사이트 없음'}
+                </span>
+                <ChevronDown className="w-3 h-3 ml-auto" />
+              </button>
+              {siteDropdownOpen && (
+                <div className="absolute right-0 top-full mt-1 w-60 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50">
+                  {sites.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-gray-400">등록된 사이트가 없습니다</div>
+                  ) : (
+                    sites.map((s) => (
+                      <button
+                        key={s.site_id}
+                        onClick={() => {
+                          setSiteId(s.site_id);
+                          setSiteDropdownOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center justify-between"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-gray-900 font-medium truncate">{s.domain}</p>
+                          <p className="text-[10px] text-gray-400 truncate">{s.site_id}</p>
+                        </div>
+                        {s.site_id === siteId && <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+                      </button>
+                    ))
+                  )}
+                  <div className="border-t border-gray-100 mt-1 pt-1">
+                    <NavLink
+                      to="/dashboard/settings"
+                      onClick={() => setSiteDropdownOpen(false)}
+                      className="block px-3 py-2 text-xs text-blue-600 hover:bg-blue-50"
+                    >
+                      + 사이트 추가
+                    </NavLink>
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-sm font-medium">
               {user?.email?.charAt(0).toUpperCase() || 'U'}
             </div>

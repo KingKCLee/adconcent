@@ -5,41 +5,69 @@ import { workerFetch } from '@/lib/api';
 import { getLimits } from '@/lib/plans';
 import { UpgradePrompt } from '@/components/ui/UpgradePrompt';
 import { usePlan } from '@/hooks/usePlan';
+import { useSite } from '@/contexts/SiteContext';
 
 interface StatsResponse {
   ips: { ip: string; count: number; firstSeen: string; lastSeen: string; events: { event: string; time: string }[] }[];
   summary: { total: number; totalClicks: number };
 }
 
+interface NaverStatsResponse {
+  totals?: { impCnt: number; clkCnt: number; salesAmt: number };
+}
+
 const WORKER_URL = import.meta.env.VITE_ADCONCENT_WORKER_URL;
-const SITE_ID = 'hitbunyang';
-const SCRIPT_TAG = `<script src="${WORKER_URL}/collect?site_id=${SITE_ID}" async></script>`;
-const AVG_CPC = 800;
+const FALLBACK_AVG_CPC = 800;
 
 export function ClickFraudPage() {
-  const { plan, isFree } = usePlan(SITE_ID);
+  const { siteId } = useSite();
+  const { plan, isFree } = usePlan();
   const limits = getLimits(plan);
+  const SCRIPT_TAG = `<script src="${WORKER_URL}/collect?site_id=${siteId}" async></script>`;
   const [stats, setStats] = useState<StatsResponse | null>(null);
+  const [avgCpc, setAvgCpc] = useState<number>(FALLBACK_AVG_CPC);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [installCheck, setInstallCheck] = useState<'idle' | 'checking' | 'ok' | 'fail'>('idle');
-  const [blockedThisMonth, setBlockedThisMonth] = useState(0); // 임시: 로컬 카운터
+  const [blockedThisMonth, setBlockedThisMonth] = useState(0);
   const [showUpgrade, setShowUpgrade] = useState(false);
 
   const loadStats = () => {
+    if (!siteId) return;
     setLoading(true);
-    workerFetch<StatsResponse>(`/stats?site_id=${SITE_ID}`)
-      .then(setStats)
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    const today = new Date();
+    const since = new Date(today);
+    since.setDate(since.getDate() - 6);
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    Promise.allSettled([
+      workerFetch<StatsResponse>(`/stats?site_id=${siteId}`),
+      workerFetch<NaverStatsResponse>('/naver/stats', {
+        method: 'POST',
+        body: JSON.stringify({
+          site_id: siteId,
+          ids: [],
+          timeRange: { since: fmt(since), until: fmt(today) },
+          fields: ['clkCnt', 'salesAmt'],
+          idType: 'campaign',
+          timeUnit: 'day',
+        }),
+      }),
+    ]).then(([statsR, naverR]) => {
+      if (statsR.status === 'fulfilled') setStats(statsR.value);
+      if (naverR.status === 'fulfilled') {
+        const t = naverR.value?.totals;
+        if (t && t.clkCnt > 0) setAvgCpc(Math.round(t.salesAmt / t.clkCnt));
+      }
+      setLoading(false);
+    });
   };
 
-  useEffect(() => { loadStats(); }, []);
+  useEffect(() => { loadStats(); /* eslint-disable-next-line */ }, [siteId]);
 
   const totalClicks = stats?.summary.totalClicks || 0;
   const suspiciousIps = stats?.ips.filter(ip => ip.count >= 5) || [];
   const blockedClicks = suspiciousIps.reduce((sum, ip) => sum + ip.count, 0);
-  const savedAmount = blockedClicks * AVG_CPC;
+  const savedAmount = blockedClicks * avgCpc;
   const canBlock = blockedThisMonth < limits.ipBlockPerMonth;
   const unblockedSuspicious = suspiciousIps.length;
 
@@ -76,7 +104,7 @@ export function ClickFraudPage() {
     try {
       await workerFetch('/block', {
         method: 'POST',
-        body: JSON.stringify({ site_id: SITE_ID, ip, reason: 'manual' }),
+        body: JSON.stringify({ site_id: siteId, ip, reason: 'manual' }),
       });
       setBlockedThisMonth(n => n + 1);
       loadStats();

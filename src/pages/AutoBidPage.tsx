@@ -14,9 +14,9 @@ import {
 } from 'lucide-react';
 import { UpgradePrompt } from '@/components/ui/UpgradePrompt';
 import { workerFetch } from '@/lib/api';
+import { useSite } from '@/contexts/SiteContext';
 import { usePlan } from '@/hooks/usePlan';
-
-const SITE_ID = 'hitbunyang';
+import { Download } from 'lucide-react';
 
 type Tab = 'keywords' | 'logs';
 
@@ -79,7 +79,8 @@ function getStatus(kw: KeywordStat): { label: string; cls: string } {
 }
 
 export function AutoBidPage() {
-  const { isFree } = usePlan(SITE_ID);
+  const { siteId } = useSite();
+  const { isFree } = usePlan();
   const [tab, setTab] = useState<Tab>('keywords');
   const [showUpgrade, setShowUpgrade] = useState(false);
 
@@ -92,16 +93,18 @@ export function AutoBidPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [editTarget, setEditTarget] = useState<KeywordStat | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
 
   // Logs tab state
   const [logs, setLogs] = useState<BidLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
 
   const loadKeywords = async () => {
+    if (!siteId) return;
     setLoadingKw(true);
     try {
       const data = await workerFetch<{ keywords?: KeywordStat[] } | KeywordStat[]>(
-        `/naver/keyword-stats?site_id=${SITE_ID}`,
+        `/naver/keyword-stats?site_id=${siteId}`,
       );
       const list = Array.isArray(data) ? data : data?.keywords ?? [];
       setKeywords(list);
@@ -114,10 +117,11 @@ export function AutoBidPage() {
   };
 
   const loadLogs = async () => {
+    if (!siteId) return;
     setLoadingLogs(true);
     try {
       const data = await workerFetch<{ logs?: BidLog[] } | BidLog[]>(
-        `/naver/bid-logs?site_id=${SITE_ID}&limit=50`,
+        `/naver/bid-logs?site_id=${siteId}&limit=50`,
       );
       const list = Array.isArray(data) ? data : data?.logs ?? [];
       setLogs(list);
@@ -130,10 +134,11 @@ export function AutoBidPage() {
   };
 
   useEffect(() => {
+    if (!siteId) return;
     if (tab === 'keywords') loadKeywords();
     if (tab === 'logs') loadLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
+  }, [tab, siteId]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -152,7 +157,7 @@ export function AutoBidPage() {
       const res = await workerFetch<OptimizerResponse>('/naver/run-optimizer', {
         method: 'POST',
         body: JSON.stringify({
-          site_id: SITE_ID,
+          site_id: siteId,
           strategy: 'target_rank',
           settings: { targetRank: 3, maxBid: 3000, dryRun, maxKeywords: 50 },
         }),
@@ -211,6 +216,47 @@ export function AutoBidPage() {
     } catch (e: any) {
       showToast(`삭제 실패: ${e?.message ?? ''}`);
     }
+  };
+
+  const bulkImport = async () => {
+    if (isFree) {
+      setShowUpgrade(true);
+      return;
+    }
+    if (!siteId || keywords.length === 0) return;
+    const targets = keywords.filter((k) => !k.bid_setting_id);
+    if (targets.length === 0) {
+      showToast('이미 모든 키워드가 등록되어 있습니다');
+      return;
+    }
+    setBulkProgress({ done: 0, total: targets.length });
+    let done = 0;
+    const tasks = targets.map(async (kw) => {
+      try {
+        await workerFetch('/naver/bid-settings', {
+          method: 'POST',
+          body: JSON.stringify({
+            site_id: siteId,
+            keyword: kw.keyword,
+            keyword_id: kw.keyword_id ?? `manual_${kw.keyword}`,
+            target_rank: 3,
+            max_bid: 3000,
+            min_bid: 70,
+            strategy: 'target_rank',
+            is_active: 1,
+          }),
+        });
+      } catch {
+        /* ignore individual failures */
+      } finally {
+        done += 1;
+        setBulkProgress({ done, total: targets.length });
+      }
+    });
+    await Promise.allSettled(tasks);
+    setBulkProgress(null);
+    showToast(`${done}개 키워드 등록 완료`);
+    loadKeywords();
   };
 
   const todaySummary = useMemo(() => {
@@ -277,6 +323,8 @@ export function AutoBidPage() {
           running={running}
           previewing={previewing}
           isFree={isFree}
+          bulkProgress={bulkProgress}
+          onBulkImport={bulkImport}
           onAdd={() => (isFree ? setShowUpgrade(true) : setShowAdd(true))}
           onRun={() => runOptimizer(false)}
           onPreview={() => runOptimizer(true)}
@@ -298,6 +346,7 @@ export function AutoBidPage() {
       {showAdd && (
         <KeywordFormModal
           mode="add"
+          siteId={siteId}
           onClose={() => setShowAdd(false)}
           onSaved={() => {
             setShowAdd(false);
@@ -313,6 +362,7 @@ export function AutoBidPage() {
         <KeywordFormModal
           mode="edit"
           initial={editTarget}
+          siteId={siteId}
           onClose={() => setEditTarget(null)}
           onSaved={() => {
             setEditTarget(null);
@@ -357,6 +407,8 @@ function KeywordsTab(props: {
   running: boolean;
   previewing: boolean;
   isFree: boolean;
+  bulkProgress: { done: number; total: number } | null;
+  onBulkImport: () => void;
   onAdd: () => void;
   onRun: () => void;
   onPreview: () => void;
@@ -364,7 +416,7 @@ function KeywordsTab(props: {
   onDelete: (kw: KeywordStat) => void;
   onToggle: (kw: KeywordStat) => void;
 }) {
-  const { keywords, loading, running, previewing, isFree, onAdd, onRun, onPreview, onEdit, onDelete, onToggle } = props;
+  const { keywords, loading, running, previewing, isFree, bulkProgress, onBulkImport, onAdd, onRun, onPreview, onEdit, onDelete, onToggle } = props;
 
   return (
     <div className="space-y-4">
@@ -409,6 +461,25 @@ function KeywordsTab(props: {
                 <Zap className="w-3.5 h-3.5" />
               )}
               지금 실행
+            </button>
+            <button
+              onClick={onBulkImport}
+              disabled={!!bulkProgress || keywords.length === 0}
+              className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg disabled:opacity-50 ${
+                isFree
+                  ? 'bg-gray-200 text-gray-500 hover:bg-gray-300'
+                  : 'bg-violet-600 text-white hover:bg-violet-700'
+              }`}
+              title="네이버에서 가져온 모든 키워드를 자동입찰에 일괄 등록"
+            >
+              {bulkProgress ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : isFree ? (
+                <Lock className="w-3.5 h-3.5" />
+              ) : (
+                <Download className="w-3.5 h-3.5" />
+              )}
+              {bulkProgress ? `등록 중... ${bulkProgress.done}/${bulkProgress.total}` : '전체 불러오기'}
             </button>
             <button
               onClick={onAdd}
@@ -665,10 +736,11 @@ function KeywordFormModal(props: {
   mode: 'add' | 'edit';
   initial?: KeywordStat;
   existingKeywords?: KeywordStat[];
+  siteId: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const { mode, initial, existingKeywords, onClose, onSaved } = props;
+  const { mode, initial, existingKeywords, siteId, onClose, onSaved } = props;
   const [keywordsText, setKeywordsText] = useState(initial?.keyword ?? '');
   const [targetRank, setTargetRank] = useState<number>(initial?.target_rank ?? 3);
   const [maxBid, setMaxBid] = useState<number>(initial?.max_bid ?? 3000);
@@ -702,7 +774,7 @@ function KeywordFormModal(props: {
           await workerFetch('/naver/bid-settings', {
             method: 'POST',
             body: JSON.stringify({
-              site_id: SITE_ID,
+              site_id: siteId,
               keyword: kw,
               keyword_id: found?.keyword_id ?? `manual_${kw}`,
               target_rank: targetRank,
