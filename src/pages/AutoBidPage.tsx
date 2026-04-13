@@ -197,6 +197,18 @@ export function AutoBidPage() {
   const [logs, setLogs] = useState<BidLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
 
+  const normalizeKeyword = (k: any): KeywordStat => ({
+    ...k,
+    keyword: k.keyword ?? k.keyword_name ?? '',
+    keyword_id: k.keyword_id ?? k.nccKeywordId ?? k.id,
+    ncc_keyword_id: k.ncc_keyword_id ?? k.nccKeywordId ?? k.keyword_id,
+    ncc_adgroup_id: k.ncc_adgroup_id ?? k.nccAdgroupId ?? k.adgroupId ?? k.group_id,
+    campaign_id: k.campaign_id ?? k.nccCampaignId ?? k.campaignId ?? '',
+    campaign_name: k.campaign_name ?? k.campaignName ?? '',
+    group_id: k.group_id ?? k.groupId ?? k.nccAdgroupId ?? k.adgroupId ?? '',
+    group_name: k.group_name ?? k.groupName ?? k.adgroupName ?? k.nccAdgroupName ?? '',
+  });
+
   const loadKeywords = async () => {
     if (!siteId) return;
     setLoadingKw(true);
@@ -209,9 +221,10 @@ export function AutoBidPage() {
         const data = await workerFetch<
           { data?: KeywordStat[]; keywords?: KeywordStat[]; total?: number } | KeywordStat[]
         >(`/naver/keyword-stats?site_id=${siteId}&offset=${offset}&limit=${PAGE}`);
-        const items: KeywordStat[] = Array.isArray(data)
+        const rawItems: any[] = Array.isArray(data)
           ? data
           : data?.data ?? data?.keywords ?? [];
+        const items = rawItems.map(normalizeKeyword);
         const total = !Array.isArray(data) && typeof data?.total === 'number' ? data.total : null;
         all.push(...items);
         setKeywords([...all]);
@@ -254,11 +267,15 @@ export function AutoBidPage() {
         : data?.data ?? data?.campaigns ?? [];
       // 네이버 API 원본(camelCase)과 D1 형태(snake_case) 모두 정규화
       const list: CampaignGroup[] = raw.map((c: any) => ({
-        campaign_id: c.campaign_id ?? c.nccCampaignId ?? c.campaignId ?? c.id ?? '',
-        campaign_name: c.campaign_name ?? c.campaignName ?? c.name ?? '(이름없음)',
-        groups: (c.groups ?? c.adgroups ?? []).map((g: any) => ({
-          group_id: g.group_id ?? g.nccAdgroupId ?? g.adgroupId ?? g.id ?? '',
-          group_name: g.group_name ?? g.adgroupName ?? g.name ?? '(이름없음)',
+        campaign_id:
+          c.campaign_id ?? c.nccCampaignId ?? c.campaignId ?? c.id ?? '',
+        campaign_name:
+          c.campaign_name ?? c.campaignName ?? c.name ?? '(이름없음)',
+        groups: (c.groups ?? c.adgroups ?? c.adGroups ?? []).map((g: any) => ({
+          group_id:
+            g.group_id ?? g.groupId ?? g.nccAdgroupId ?? g.adgroupId ?? g.id ?? '',
+          group_name:
+            g.group_name ?? g.groupName ?? g.adgroupName ?? g.nccAdgroupName ?? g.name ?? '(이름없음)',
         })),
       }));
       setCampaignsGroups(list);
@@ -392,6 +409,43 @@ export function AutoBidPage() {
       loadKeywords();
     } catch (e: any) {
       showToast(`삭제 실패: ${e?.message ?? ''}`);
+    }
+  };
+
+  const importByScope = async () => {
+    if (isFree) {
+      setShowUpgrade(true);
+      return;
+    }
+    if (!siteId) return;
+    if (filterCampaign === 'all' && filterGroup === 'all') {
+      showToast('캠페인 또는 그룹을 먼저 선택하세요');
+      return;
+    }
+    const scopeName =
+      filterGroup !== 'all'
+        ? campaignsGroups
+            .flatMap((c) => c.groups ?? [])
+            .find((g) => g.group_id === filterGroup)?.group_name ?? '선택 그룹'
+        : campaignsGroups.find((c) => c.campaign_id === filterCampaign)?.campaign_name ?? '선택 캠페인';
+    try {
+      await workerFetch('/naver/group-strategy/apply', {
+        method: 'POST',
+        body: JSON.stringify({
+          site_id: siteId,
+          campaign_id: filterCampaign !== 'all' ? filterCampaign : undefined,
+          group_id: filterGroup !== 'all' ? filterGroup : undefined,
+          force: false,
+        }),
+      });
+      const matchedCount = keywords.filter((k) => {
+        if (filterGroup !== 'all') return k.group_id === filterGroup;
+        return k.campaign_id === filterCampaign;
+      }).length;
+      showToast(`${scopeName}의 ${matchedCount}개 키워드를 등록했습니다`);
+      loadKeywords();
+    } catch (e: any) {
+      showToast(`불러오기 실패: ${e?.message ?? ''}`);
     }
   };
 
@@ -801,6 +855,7 @@ export function AutoBidPage() {
           onToggleLowestBid={toggleLowestBidInline}
           onQuickBid={quickBid}
           strategyByGroupKey={strategyByGroupKey}
+          onImportByScope={importByScope}
         />
       ) : (
         <LogsTab
@@ -998,6 +1053,7 @@ interface KeywordsTabProps {
   onToggleLowestBid: (kw: KeywordStat) => void;
   onQuickBid: (kw: KeywordStat, bidAmt: number) => void;
   strategyByGroupKey: Map<string, GroupStrategy>;
+  onImportByScope: () => void;
 }
 
 function KeywordsTab(props: KeywordsTabProps) {
@@ -1010,7 +1066,7 @@ function KeywordsTab(props: KeywordsTabProps) {
     filterDevice, setFilterDevice, filterStatus, setFilterStatus,
     searchText, setSearchText,
     selectedIds, onToggleSelect, onToggleSelectAll, onOpenBulk,
-    onUpdateDevice, onToggleLowestBid, onQuickBid, strategyByGroupKey,
+    onUpdateDevice, onToggleLowestBid, onQuickBid, strategyByGroupKey, onImportByScope,
   } = props;
   const eligibleSelectable = keywords.filter((k) => k.bid_setting_id != null);
   const allSelected =
@@ -1085,6 +1141,17 @@ function KeywordsTab(props: KeywordsTabProps) {
             className="w-full text-xs border border-gray-200 rounded-lg pl-7 pr-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
+        {(filterCampaign !== 'all' || filterGroup !== 'all') && (
+          <button
+            onClick={onImportByScope}
+            disabled={isFree}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50"
+            title={filterGroup !== 'all' ? '이 그룹의 모든 키워드를 자동입찰에 등록' : '이 캠페인의 모든 키워드를 자동입찰에 등록'}
+          >
+            {isFree ? <Lock className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
+            {filterGroup !== 'all' ? '이 그룹 불러오기' : '이 캠페인 불러오기'}
+          </button>
+        )}
         {selectedIds.size > 0 && (
           <button
             onClick={onOpenBulk}
