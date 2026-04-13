@@ -124,6 +124,94 @@ export function AnalyticsPage() {
     } catch {}
   };
 
+  // 실데이터 컨텍스트 (마운트 시 미리 로드)
+  const [siteContext, setSiteContext] = useState<{
+    totals: { impressions: number; clicks: number; cost: number; conversions: number };
+    topKeywords: any[];
+    weekTotals?: { imp: number; clk: number; cost: number; conv: number };
+    lastWeekTotals?: { imp: number; clk: number; cost: number; conv: number };
+  }>({
+    totals: { impressions: 0, clicks: 0, cost: 0, conversions: 0 },
+    topKeywords: [],
+  });
+
+  useEffect(() => {
+    if (!siteId) return;
+    const today = new Date();
+    const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
+    const monthFirst = new Date(today.getFullYear(), today.getMonth(), 1);
+    const thisWeekStart = new Date(today);
+    thisWeekStart.setDate(today.getDate() - today.getDay());
+    const lastWeekStart = new Date(thisWeekStart);
+    lastWeekStart.setDate(thisWeekStart.getDate() - 7);
+    const lastWeekEnd = new Date(thisWeekStart);
+    lastWeekEnd.setDate(thisWeekStart.getDate() - 1);
+
+    Promise.allSettled([
+      workerFetch<any>('/naver/stats', {
+        method: 'POST',
+        body: JSON.stringify({
+          site_id: siteId,
+          ids: [],
+          timeRange: { since: fmtDate(monthFirst), until: fmtDate(today) },
+          fields: ['clkCnt', 'impCnt', 'salesAmt', 'crto'],
+          idType: 'campaign',
+          timeUnit: 'day',
+        }),
+      }),
+      workerFetch<any>(`/naver/keyword-stats?site_id=${siteId}&offset=0&limit=20`),
+      workerFetch<any>('/naver/stats', {
+        method: 'POST',
+        body: JSON.stringify({
+          site_id: siteId,
+          ids: [],
+          timeRange: { since: fmtDate(thisWeekStart), until: fmtDate(today) },
+          fields: ['clkCnt', 'impCnt', 'salesAmt', 'crto'],
+          idType: 'campaign',
+          timeUnit: 'day',
+        }),
+      }),
+      workerFetch<any>('/naver/stats', {
+        method: 'POST',
+        body: JSON.stringify({
+          site_id: siteId,
+          ids: [],
+          timeRange: { since: fmtDate(lastWeekStart), until: fmtDate(lastWeekEnd) },
+          fields: ['clkCnt', 'impCnt', 'salesAmt', 'crto'],
+          idType: 'campaign',
+          timeUnit: 'day',
+        }),
+      }),
+    ]).then(([monthR, kwR, thisWeekR, lastWeekR]) => {
+      const next: any = {
+        totals: { impressions: 0, clicks: 0, cost: 0, conversions: 0 },
+        topKeywords: [],
+      };
+      if (monthR.status === 'fulfilled' && monthR.value?.totals) {
+        const t = monthR.value.totals;
+        next.totals = {
+          impressions: t.impCnt ?? 0,
+          clicks: t.clkCnt ?? 0,
+          cost: t.salesAmt ?? 0,
+          conversions: Math.round(t.crto ?? 0),
+        };
+      }
+      if (kwR.status === 'fulfilled') {
+        const v = kwR.value;
+        next.topKeywords = Array.isArray(v) ? v : v?.data ?? v?.keywords ?? [];
+      }
+      if (thisWeekR.status === 'fulfilled' && thisWeekR.value?.totals) {
+        const t = thisWeekR.value.totals;
+        next.weekTotals = { imp: t.impCnt ?? 0, clk: t.clkCnt ?? 0, cost: t.salesAmt ?? 0, conv: Math.round(t.crto ?? 0) };
+      }
+      if (lastWeekR.status === 'fulfilled' && lastWeekR.value?.totals) {
+        const t = lastWeekR.value.totals;
+        next.lastWeekTotals = { imp: t.impCnt ?? 0, clk: t.clkCnt ?? 0, cost: t.salesAmt ?? 0, conv: Math.round(t.crto ?? 0) };
+      }
+      setSiteContext(next);
+    });
+  }, [siteId]);
+
   const [addedKeywords, setAddedKeywords] = useState<Set<string>>(new Set());
   const handleAddToAutobid = async (keyword: string) => {
     if (!siteId) {
@@ -165,8 +253,9 @@ export function AnalyticsPage() {
 
   const handleBriefing = () => run(async () => {
     const result = await callAi<BriefingResult>('briefing', {
-      totals: { impressions: 1000, clicks: 50, cost: 30000, conversions: 3 },
-      bizMoney: 500000, targetCpa: 10000, dailyBudget: 50000,
+      site_id: siteId,
+      totals: siteContext.totals,
+      topKeywords: siteContext.topKeywords.slice(0, 10),
     });
     setBriefing(result);
     persistAnalytics({ briefing: result });
@@ -174,26 +263,46 @@ export function AnalyticsPage() {
 
   const handleKeyword = () => run(async () => {
     if (!keyword) { setError('키워드를 입력하세요'); return; }
+    // 입력된 키워드와 매칭되는 실데이터 찾기
+    const matched = siteContext.topKeywords.find((k: any) =>
+      k.keyword === keyword || k.keyword?.toLowerCase().includes(keyword.toLowerCase()),
+    );
     const result = await callAi<KeywordResult>('keyword_health', {
-      keyword, bidAmt: 500, qiGrade: 5, rank1Bid: 1500, rank3Bid: 800,
-      status: 'ELIGIBLE', impressions: 200, clicks: 10,
+      site_id: siteId,
+      keyword,
+      bidAmt: matched?.current_bid ?? 0,
+      qiGrade: matched?.qi_grade ?? null,
+      rank1Bid: matched?.bid_rank1 ?? null,
+      rank3Bid: matched?.bid_rank3 ?? null,
+      status: matched?.ad_status ?? 'ELIGIBLE',
+      impressions: matched?.monthly_pc ?? 0,
+      clicks: matched?.clkCnt ?? 0,
     });
     setKeywordResult(result);
   });
 
   const handleAd = () => run(async () => {
     if (!productName) { setError('상품명을 입력하세요'); return; }
+    // 운영 중인 상위 키워드 자동 첨부
+    const topKeywordList = siteContext.topKeywords
+      .slice(0, 5)
+      .map((k: any) => k.keyword)
+      .filter(Boolean);
+    const userKeywords = adKeywords.split(',').map((k) => k.trim()).filter(Boolean);
     const result = await callAi<AdResult>('ad_suggestions', {
-      productName, region, keywords: adKeywords.split(',').map(k => k.trim()).filter(Boolean),
+      site_id: siteId,
+      productName,
+      region,
+      keywords: userKeywords.length > 0 ? userKeywords : topKeywordList,
     });
     setAdResult(result);
   });
 
   const handleWeekly = () => run(async () => {
     const result = await callAi<WeeklyResult>('weekly_insight', {
-      thisWeek: { imp: 7000, clk: 350, cost: 210000, conv: 21 },
-      lastWeek: { imp: 6000, clk: 280, cost: 195000, conv: 15 },
-      dailyBudget: 50000,
+      site_id: siteId,
+      thisWeek: siteContext.weekTotals ?? { imp: 0, clk: 0, cost: 0, conv: 0 },
+      lastWeek: siteContext.lastWeekTotals ?? { imp: 0, clk: 0, cost: 0, conv: 0 },
     });
     setWeekly(result);
   });

@@ -118,6 +118,16 @@ export function ClickFraudPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId, period]);
 
+  // 자동 30초 갱신 (today 기간일 때만)
+  useEffect(() => {
+    if (period !== 'today' || !siteId) return;
+    const id = setInterval(() => {
+      loadStats();
+    }, 30000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [siteId, period]);
+
   const totals = useMemo(() => {
     const t = detail?.totals ?? {};
     return {

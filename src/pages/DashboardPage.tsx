@@ -320,6 +320,31 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* Quick actions */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <Link
+          to="/dashboard/autobid"
+          className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
+        >
+          <Zap className="w-4 h-4" />
+          지금 최적화
+        </Link>
+        <Link
+          to="/dashboard/analytics"
+          className="flex items-center gap-1.5 px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700"
+        >
+          <Sparkles className="w-4 h-4" />
+          AI 분석
+        </Link>
+        <Link
+          to="/dashboard/report"
+          className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+        >
+          <ArrowRight className="w-4 h-4" />
+          이번주 리포트
+        </Link>
+      </div>
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {kpiCards.map(({ label, icon: Icon, color, bg, value, sub }) => (
