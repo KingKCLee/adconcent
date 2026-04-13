@@ -11,18 +11,39 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  Monitor,
+  Smartphone,
+  Search,
+  Settings2,
+  Download,
 } from 'lucide-react';
 import { UpgradePrompt } from '@/components/ui/UpgradePrompt';
 import { workerFetch } from '@/lib/api';
 import { useSite } from '@/contexts/SiteContext';
 import { usePlan } from '@/hooks/usePlan';
-import { Download } from 'lucide-react';
+
+type Device = 'ALL' | 'PC' | 'M';
+type StatusFilter = 'all' | 'normal' | 'no_impression' | 'paused' | 'max_reached';
+
+interface CampaignGroup {
+  campaign_id: string;
+  campaign_name: string;
+  groups?: { group_id: string; group_name: string }[];
+}
 
 type Tab = 'keywords' | 'logs';
+
+interface HourSchedule {
+  [hour: string]: number | 'stop' | null;
+}
 
 interface KeywordStat {
   keyword: string;
   keyword_id?: string;
+  campaign_id?: string;
+  campaign_name?: string;
+  group_id?: string;
+  group_name?: string;
   current_rank: number | null;
   current_bid: number;
   target_rank: number | null;
@@ -31,6 +52,13 @@ interface KeywordStat {
   bid_setting_id?: number | null;
   is_active?: number;
   strategy?: string;
+  device?: Device;
+  region?: string | null;
+  lowest_bid?: number;
+  lowest_bid_wait_min?: number;
+  ad_status?: string;
+  user_locked?: number;
+  hourly_schedule?: HourSchedule | string;
 }
 
 interface BidLog {
@@ -64,18 +92,47 @@ interface OptimizerResponse {
 
 const won = (n: number) => `₩${(n ?? 0).toLocaleString()}`;
 
-function getStatus(kw: KeywordStat): { label: string; cls: string } {
+type StatusKind =
+  | 'normal'
+  | 'achieved'
+  | 'bidding'
+  | 'lowering'
+  | 'no_impression'
+  | 'max_reached'
+  | 'paused'
+  | 'user_locked'
+  | 'unset';
+
+function getStatus(kw: KeywordStat): { kind: StatusKind; label: string; cls: string; tooltip?: string } {
+  if (kw.user_locked) {
+    return { kind: 'user_locked', label: '사용자잠금', cls: 'bg-gray-100 text-gray-500 border-gray-300' };
+  }
+  if (kw.ad_status && /paused|stopped|중지|off/i.test(kw.ad_status)) {
+    return {
+      kind: 'paused',
+      label: '광고중지',
+      cls: 'bg-red-50 text-red-700 border-red-200',
+      tooltip: kw.ad_status,
+    };
+  }
   if (kw.max_bid && kw.current_bid >= kw.max_bid)
-    return { label: '최대도달', cls: 'bg-red-50 text-red-600 border-red-200' };
+    return { kind: 'max_reached', label: '최대도달', cls: 'bg-red-50 text-red-600 border-red-200' };
   if (kw.current_rank == null)
-    return { label: '노출없음', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
+    return { kind: 'no_impression', label: '노출없음', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
   if (kw.target_rank == null)
-    return { label: '미설정', cls: 'bg-gray-50 text-gray-500 border-gray-200' };
+    return { kind: 'unset', label: '미설정', cls: 'bg-gray-50 text-gray-500 border-gray-200' };
   if (kw.current_rank === kw.target_rank)
-    return { label: '목표달성', cls: 'bg-green-50 text-green-600 border-green-200' };
+    return { kind: 'achieved', label: '목표달성', cls: 'bg-blue-50 text-blue-700 border-blue-200' };
   if (kw.current_rank < kw.target_rank)
-    return { label: '하향입찰', cls: 'bg-gray-50 text-gray-600 border-gray-200' };
-  return { label: '입찰중', cls: 'bg-blue-50 text-blue-600 border-blue-200' };
+    return { kind: 'lowering', label: '하향입찰', cls: 'bg-gray-50 text-gray-600 border-gray-200' };
+  return { kind: 'bidding', label: '입찰중', cls: 'bg-orange-50 text-orange-700 border-orange-200' };
+}
+
+function statusToFilterKind(kind: StatusKind): StatusFilter {
+  if (kind === 'no_impression') return 'no_impression';
+  if (kind === 'paused') return 'paused';
+  if (kind === 'max_reached') return 'max_reached';
+  return 'normal';
 }
 
 export function AutoBidPage() {
@@ -94,6 +151,16 @@ export function AutoBidPage() {
   const [editTarget, setEditTarget] = useState<KeywordStat | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+
+  // Filter + selection state
+  const [campaignsGroups, setCampaignsGroups] = useState<CampaignGroup[]>([]);
+  const [filterCampaign, setFilterCampaign] = useState<string>('all');
+  const [filterGroup, setFilterGroup] = useState<string>('all');
+  const [filterDevice, setFilterDevice] = useState<Device | 'all'>('all');
+  const [filterStatus, setFilterStatus] = useState<StatusFilter>('all');
+  const [searchText, setSearchText] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulk, setShowBulk] = useState(false);
 
   // Logs tab state
   const [logs, setLogs] = useState<BidLog[]>([]);
@@ -133,9 +200,27 @@ export function AutoBidPage() {
     }
   };
 
+  const loadCampaignsGroups = async () => {
+    if (!siteId) return;
+    try {
+      const data = await workerFetch<{ data?: CampaignGroup[]; campaigns?: CampaignGroup[] } | CampaignGroup[]>(
+        `/naver/campaigns-groups?site_id=${siteId}`,
+      );
+      const list: CampaignGroup[] = Array.isArray(data)
+        ? data
+        : data?.data ?? data?.campaigns ?? [];
+      setCampaignsGroups(list);
+    } catch {
+      setCampaignsGroups([]);
+    }
+  };
+
   useEffect(() => {
     if (!siteId) return;
-    if (tab === 'keywords') loadKeywords();
+    if (tab === 'keywords') {
+      loadKeywords();
+      loadCampaignsGroups();
+    }
     if (tab === 'logs') loadLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, siteId]);
@@ -259,6 +344,122 @@ export function AutoBidPage() {
     loadKeywords();
   };
 
+  const filteredKeywords = useMemo(() => {
+    return keywords.filter((k) => {
+      if (filterCampaign !== 'all' && k.campaign_id !== filterCampaign) return false;
+      if (filterGroup !== 'all' && k.group_id !== filterGroup) return false;
+      if (filterDevice !== 'all') {
+        const dev = (k.device ?? 'ALL') as Device;
+        if (filterDevice === 'PC' && dev === 'M') return false;
+        if (filterDevice === 'M' && dev === 'PC') return false;
+      }
+      if (filterStatus !== 'all') {
+        const kind = statusToFilterKind(getStatus(k).kind);
+        if (kind !== filterStatus) return false;
+      }
+      if (searchText.trim()) {
+        const q = searchText.trim().toLowerCase();
+        if (!k.keyword.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [keywords, filterCampaign, filterGroup, filterDevice, filterStatus, searchText]);
+
+  const groupOptions = useMemo(() => {
+    if (filterCampaign === 'all') {
+      return campaignsGroups.flatMap((c) => c.groups ?? []);
+    }
+    return campaignsGroups.find((c) => c.campaign_id === filterCampaign)?.groups ?? [];
+  }, [campaignsGroups, filterCampaign]);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const eligible = filteredKeywords
+      .filter((k) => k.bid_setting_id != null)
+      .map((k) => String(k.bid_setting_id));
+    setSelectedIds((prev) => {
+      if (eligible.every((id) => prev.has(id))) return new Set();
+      return new Set(eligible);
+    });
+  };
+
+  const applyBulkSettings = async (changes: BulkChanges) => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setBulkProgress({ done: 0, total: ids.length });
+    let done = 0;
+    const tasks = ids.map(async (id) => {
+      try {
+        await workerFetch(`/naver/bid-settings/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify(changes),
+        });
+      } catch {
+        /* ignore */
+      } finally {
+        done += 1;
+        setBulkProgress({ done, total: ids.length });
+      }
+    });
+    await Promise.allSettled(tasks);
+    setBulkProgress(null);
+    setShowBulk(false);
+    setSelectedIds(new Set());
+    showToast(`${done}개 키워드 일괄설정 적용 완료`);
+    loadKeywords();
+  };
+
+  const updateDeviceInline = async (kw: KeywordStat) => {
+    if (isFree) {
+      setShowUpgrade(true);
+      return;
+    }
+    if (!kw.bid_setting_id) return;
+    const cur = (kw.device ?? 'ALL') as Device;
+    const next: Device = cur === 'ALL' ? 'PC' : cur === 'PC' ? 'M' : 'ALL';
+    setKeywords((prev) =>
+      prev.map((k) => (k.bid_setting_id === kw.bid_setting_id ? { ...k, device: next } : k)),
+    );
+    try {
+      await workerFetch(`/naver/bid-settings/${kw.bid_setting_id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ device: next }),
+      });
+    } catch {
+      showToast('매체 변경 실패');
+      loadKeywords();
+    }
+  };
+
+  const toggleLowestBidInline = async (kw: KeywordStat) => {
+    if (isFree) {
+      setShowUpgrade(true);
+      return;
+    }
+    if (!kw.bid_setting_id) return;
+    const next = kw.lowest_bid ? 0 : 1;
+    setKeywords((prev) =>
+      prev.map((k) => (k.bid_setting_id === kw.bid_setting_id ? { ...k, lowest_bid: next } : k)),
+    );
+    try {
+      await workerFetch(`/naver/bid-settings/${kw.bid_setting_id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ lowest_bid: next }),
+      });
+    } catch {
+      showToast('최저가 입찰 변경 실패');
+      loadKeywords();
+    }
+  };
+
   const todaySummary = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
     const todays = logs.filter((l) => (l.created_at ?? '').slice(0, 10) === today);
@@ -330,7 +531,8 @@ export function AutoBidPage() {
 
       {tab === 'keywords' ? (
         <KeywordsTab
-          keywords={keywords}
+          keywords={filteredKeywords}
+          totalCount={keywords.length}
           loading={loadingKw}
           running={running}
           previewing={previewing}
@@ -343,6 +545,27 @@ export function AutoBidPage() {
           onEdit={(kw) => (isFree ? setShowUpgrade(true) : setEditTarget(kw))}
           onDelete={deleteSetting}
           onToggle={toggleActive}
+          campaignsGroups={campaignsGroups}
+          groupOptions={groupOptions}
+          filterCampaign={filterCampaign}
+          setFilterCampaign={(v) => {
+            setFilterCampaign(v);
+            setFilterGroup('all');
+          }}
+          filterGroup={filterGroup}
+          setFilterGroup={setFilterGroup}
+          filterDevice={filterDevice}
+          setFilterDevice={setFilterDevice}
+          filterStatus={filterStatus}
+          setFilterStatus={setFilterStatus}
+          searchText={searchText}
+          setSearchText={setSearchText}
+          selectedIds={selectedIds}
+          onToggleSelect={toggleSelect}
+          onToggleSelectAll={toggleSelectAll}
+          onOpenBulk={() => setShowBulk(true)}
+          onUpdateDevice={updateDeviceInline}
+          onToggleLowestBid={toggleLowestBidInline}
         />
       ) : (
         <LogsTab
@@ -384,6 +607,16 @@ export function AutoBidPage() {
         />
       )}
 
+      {/* Bulk settings modal */}
+      {showBulk && (
+        <BulkSettingsModal
+          count={selectedIds.size}
+          onClose={() => setShowBulk(false)}
+          onApply={applyBulkSettings}
+          progress={bulkProgress}
+        />
+      )}
+
       {/* Preview modal */}
       {previewResult && (
         <PreviewModal
@@ -413,8 +646,9 @@ export function AutoBidPage() {
 
 /* ---------- Keywords Tab ---------- */
 
-function KeywordsTab(props: {
+interface KeywordsTabProps {
   keywords: KeywordStat[];
+  totalCount: number;
   loading: boolean;
   running: boolean;
   previewing: boolean;
@@ -427,8 +661,41 @@ function KeywordsTab(props: {
   onEdit: (kw: KeywordStat) => void;
   onDelete: (kw: KeywordStat) => void;
   onToggle: (kw: KeywordStat) => void;
-}) {
-  const { keywords, loading, running, previewing, isFree, bulkProgress, onBulkImport, onAdd, onRun, onPreview, onEdit, onDelete, onToggle } = props;
+  campaignsGroups: CampaignGroup[];
+  groupOptions: { group_id: string; group_name: string }[];
+  filterCampaign: string;
+  setFilterCampaign: (v: string) => void;
+  filterGroup: string;
+  setFilterGroup: (v: string) => void;
+  filterDevice: Device | 'all';
+  setFilterDevice: (v: Device | 'all') => void;
+  filterStatus: StatusFilter;
+  setFilterStatus: (v: StatusFilter) => void;
+  searchText: string;
+  setSearchText: (v: string) => void;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onToggleSelectAll: () => void;
+  onOpenBulk: () => void;
+  onUpdateDevice: (kw: KeywordStat) => void;
+  onToggleLowestBid: (kw: KeywordStat) => void;
+}
+
+function KeywordsTab(props: KeywordsTabProps) {
+  const {
+    keywords, totalCount, loading, running, previewing, isFree,
+    bulkProgress, onBulkImport, onAdd, onRun, onPreview, onEdit, onDelete, onToggle,
+    campaignsGroups, groupOptions,
+    filterCampaign, setFilterCampaign, filterGroup, setFilterGroup,
+    filterDevice, setFilterDevice, filterStatus, setFilterStatus,
+    searchText, setSearchText,
+    selectedIds, onToggleSelect, onToggleSelectAll, onOpenBulk,
+    onUpdateDevice, onToggleLowestBid,
+  } = props;
+  const eligibleSelectable = keywords.filter((k) => k.bid_setting_id != null);
+  const allSelected =
+    eligibleSelectable.length > 0 &&
+    eligibleSelectable.every((k) => selectedIds.has(String(k.bid_setting_id)));
 
   return (
     <div className="space-y-4">
@@ -443,10 +710,78 @@ function KeywordsTab(props: {
         </div>
       )}
 
+      {/* Filter bar */}
+      <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center gap-2 flex-wrap">
+        <select
+          value={filterCampaign}
+          onChange={(e) => setFilterCampaign(e.target.value)}
+          className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[140px]"
+        >
+          <option value="all">캠페인: 전체</option>
+          {campaignsGroups.map((c) => (
+            <option key={c.campaign_id} value={c.campaign_id}>{c.campaign_name}</option>
+          ))}
+        </select>
+        <select
+          value={filterGroup}
+          onChange={(e) => setFilterGroup(e.target.value)}
+          className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[140px]"
+        >
+          <option value="all">그룹: 전체</option>
+          {groupOptions.map((g) => (
+            <option key={g.group_id} value={g.group_id}>{g.group_name}</option>
+          ))}
+        </select>
+        <div className="inline-flex items-center bg-gray-100 rounded-lg p-0.5">
+          {(['all', 'PC', 'M'] as const).map((d) => (
+            <button
+              key={d}
+              onClick={() => setFilterDevice(d)}
+              className={`text-xs px-3 py-1 rounded-md transition-colors ${
+                filterDevice === d ? 'bg-white shadow text-blue-600 font-medium' : 'text-gray-500'
+              }`}
+            >
+              {d === 'all' ? '전체' : d === 'PC' ? 'PC' : '모바일'}
+            </button>
+          ))}
+        </div>
+        <select
+          value={filterStatus}
+          onChange={(e) => setFilterStatus(e.target.value as StatusFilter)}
+          className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="all">상태: 전체</option>
+          <option value="normal">정상</option>
+          <option value="no_impression">노출없음</option>
+          <option value="paused">광고중지</option>
+          <option value="max_reached">최대도달</option>
+        </select>
+        <div className="relative flex-1 min-w-[180px]">
+          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+          <input
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            placeholder="키워드 검색..."
+            className="w-full text-xs border border-gray-200 rounded-lg pl-7 pr-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        {selectedIds.size > 0 && (
+          <button
+            onClick={onOpenBulk}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <Settings2 className="w-3.5 h-3.5" />
+            선택 항목 일괄설정 ({selectedIds.size})
+          </button>
+        )}
+      </div>
+
       <div className="bg-white rounded-xl border border-gray-200">
         {/* Action bar */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
-          <h3 className="font-semibold text-gray-900">키워드 자동입찰 ({keywords.length}개)</h3>
+          <h3 className="font-semibold text-gray-900">
+            키워드 자동입찰 ({keywords.length}{totalCount !== keywords.length ? ` / ${totalCount}` : ''}개)
+          </h3>
           <div className="flex items-center gap-2">
             <button
               onClick={onPreview}
@@ -521,11 +856,23 @@ function KeywordsTab(props: {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-gray-400 border-b border-gray-100 bg-gray-50">
+                <th className="px-3 py-3 w-10 text-center">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={onToggleSelectAll}
+                    disabled={isFree || eligibleSelectable.length === 0}
+                    className="rounded border-gray-300"
+                  />
+                </th>
                 <th className="px-4 py-3 font-medium">키워드</th>
+                <th className="px-2 py-3 font-medium text-center">매체</th>
+                <th className="px-2 py-3 font-medium text-center">지역</th>
                 <th className="px-3 py-3 font-medium text-center">현재순위</th>
                 <th className="px-3 py-3 font-medium text-center">목표순위</th>
                 <th className="px-3 py-3 font-medium text-right">현재입찰가</th>
                 <th className="px-3 py-3 font-medium text-center">상태</th>
+                <th className="px-3 py-3 font-medium text-center">최저가</th>
                 <th className="px-3 py-3 font-medium text-center">ON/OFF</th>
                 <th className="px-3 py-3 font-medium text-center">액션</th>
               </tr>
@@ -535,9 +882,44 @@ function KeywordsTab(props: {
                 const status = getStatus(kw);
                 const hasSetting = !!kw.bid_setting_id;
                 const isActive = !!kw.is_active;
+                const idStr = String(kw.bid_setting_id ?? '');
+                const checked = selectedIds.has(idStr);
+                const dev = (kw.device ?? 'ALL') as Device;
+                const lowestOn = !!kw.lowest_bid;
                 return (
                   <tr key={`${kw.keyword}-${i}`} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="px-3 py-3 text-center">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={!hasSetting || isFree}
+                        onChange={() => onToggleSelect(idStr)}
+                        className="rounded border-gray-300"
+                      />
+                    </td>
                     <td className="px-4 py-3 font-medium text-gray-800">{kw.keyword}</td>
+                    <td className="px-2 py-3 text-center">
+                      <button
+                        onClick={() => onUpdateDevice(kw)}
+                        disabled={!hasSetting}
+                        title={`매체: ${dev === 'ALL' ? '전체' : dev === 'PC' ? 'PC' : '모바일'} (클릭으로 토글)`}
+                        className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {dev === 'ALL' ? (
+                          <>
+                            <Monitor className="w-3 h-3 text-blue-500" />
+                            <Smartphone className="w-3 h-3 text-violet-500" />
+                          </>
+                        ) : dev === 'PC' ? (
+                          <Monitor className="w-3.5 h-3.5 text-blue-500" />
+                        ) : (
+                          <Smartphone className="w-3.5 h-3.5 text-violet-500" />
+                        )}
+                      </button>
+                    </td>
+                    <td className="px-2 py-3 text-center text-xs text-gray-500">
+                      {kw.region || <span className="text-gray-300">전국</span>}
+                    </td>
                     <td className="px-3 py-3 text-center text-gray-700">
                       {kw.current_rank == null ? (
                         <span className="text-gray-400">노출없음</span>
@@ -554,9 +936,35 @@ function KeywordsTab(props: {
                     </td>
                     <td className="px-3 py-3 text-right text-gray-700">{won(kw.current_bid)}</td>
                     <td className="px-3 py-3 text-center">
-                      <span className={`text-[10px] font-medium px-2 py-1 rounded-full border ${status.cls}`}>
+                      <span
+                        title={status.tooltip}
+                        className={`text-[10px] font-medium px-2 py-1 rounded-full border ${status.cls} inline-flex items-center gap-1`}
+                      >
+                        {status.kind === 'user_locked' && <Lock className="w-2.5 h-2.5" />}
                         {status.label}
                       </span>
+                    </td>
+                    <td className="px-3 py-3 text-center">
+                      {hasSetting ? (
+                        <button
+                          onClick={() => onToggleLowestBid(kw)}
+                          disabled={isFree}
+                          className={`relative inline-flex items-center w-9 h-5 rounded-full transition-colors ${
+                            isFree ? 'bg-gray-200 cursor-not-allowed' : lowestOn ? 'bg-green-500' : 'bg-gray-300'
+                          }`}
+                          title={lowestOn ? '최저가 입찰 ON' : '최저가 입찰 OFF'}
+                        >
+                          <span
+                            className={`inline-flex items-center justify-center w-3.5 h-3.5 bg-white rounded-full shadow transform transition-transform ${
+                              lowestOn ? 'translate-x-[18px]' : 'translate-x-[3px]'
+                            }`}
+                          >
+                            {lowestOn && <Zap className="w-2 h-2 text-green-600" />}
+                          </span>
+                        </button>
+                      ) : (
+                        <span className="text-xs text-gray-300">-</span>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-center">
                       {hasSetting ? (
@@ -742,7 +1150,14 @@ function LogsTab(props: {
   );
 }
 
-/* ---------- Keyword Add/Edit Modal ---------- */
+/* ---------- Keyword Add/Edit Modal (Tabbed) ---------- */
+
+const REGIONS = [
+  '전국', '서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종',
+  '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주',
+];
+
+type FormTab = 'basic' | 'time' | 'region';
 
 function KeywordFormModal(props: {
   mode: 'add' | 'edit';
@@ -753,27 +1168,65 @@ function KeywordFormModal(props: {
   onSaved: () => void;
 }) {
   const { mode, initial, existingKeywords, siteId, onClose, onSaved } = props;
+  const [formTab, setFormTab] = useState<FormTab>('basic');
   const [keywordsText, setKeywordsText] = useState(initial?.keyword ?? '');
   const [targetRank, setTargetRank] = useState<number>(initial?.target_rank ?? 3);
   const [maxBid, setMaxBid] = useState<number>(initial?.max_bid ?? 3000);
   const [minBid, setMinBid] = useState<number>(initial?.min_bid ?? 70);
   const [strategy, setStrategy] = useState<string>(initial?.strategy ?? 'target_rank');
+  const [device, setDevice] = useState<Device>((initial?.device as Device) ?? 'ALL');
+  const [lowestBid, setLowestBid] = useState<boolean>(!!initial?.lowest_bid);
+  const [lowestBidWaitMin, setLowestBidWaitMin] = useState<number>(initial?.lowest_bid_wait_min ?? 10);
+  const [region, setRegion] = useState<string>(initial?.region ?? '전국');
+
+  const initialSchedule = (() => {
+    const raw = initial?.hourly_schedule;
+    if (!raw) return {} as HourSchedule;
+    if (typeof raw === 'string') {
+      try { return JSON.parse(raw) as HourSchedule; } catch { return {}; }
+    }
+    return raw;
+  })();
+  const [schedule, setSchedule] = useState<HourSchedule>(initialSchedule);
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const setHour = (h: number, val: number | 'stop') => {
+    setSchedule((prev) => ({ ...prev, [h]: val }));
+  };
+  const applyPreset = (preset: 'peak' | 'night' | 'all3') => {
+    const next: HourSchedule = {};
+    if (preset === 'peak') {
+      for (let h = 9; h <= 18; h++) next[h] = 1;
+    } else if (preset === 'night') {
+      for (let h = 22; h <= 23; h++) next[h] = 'stop';
+      for (let h = 0; h <= 8; h++) next[h] = 'stop';
+    } else {
+      for (let h = 0; h < 24; h++) next[h] = 3;
+    }
+    setSchedule((prev) => ({ ...prev, ...next }));
+  };
 
   const submit = async () => {
     setError(null);
     setSaving(true);
     try {
+      const commonPayload = {
+        target_rank: targetRank,
+        max_bid: maxBid,
+        min_bid: minBid,
+        strategy,
+        device,
+        lowest_bid: lowestBid ? 1 : 0,
+        lowest_bid_wait_min: lowestBidWaitMin,
+        region,
+        hourly_schedule: JSON.stringify(schedule),
+      };
       if (mode === 'edit' && initial?.bid_setting_id) {
         await workerFetch(`/naver/bid-settings/${initial.bid_setting_id}`, {
           method: 'PUT',
-          body: JSON.stringify({
-            target_rank: targetRank,
-            max_bid: maxBid,
-            min_bid: minBid,
-            strategy,
-          }),
+          body: JSON.stringify(commonPayload),
         });
       } else {
         const list = keywordsText
@@ -789,11 +1242,8 @@ function KeywordFormModal(props: {
               site_id: siteId,
               keyword: kw,
               keyword_id: found?.keyword_id ?? `manual_${kw}`,
-              target_rank: targetRank,
-              max_bid: maxBid,
-              min_bid: minBid,
-              strategy,
               is_active: 1,
+              ...commonPayload,
             }),
           });
         }
@@ -808,80 +1258,226 @@ function KeywordFormModal(props: {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 relative">
-        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
-          <X className="w-5 h-5" />
-        </button>
-        <h3 className="text-lg font-bold text-gray-900 mb-5">
-          {mode === 'add' ? '키워드 추가' : `"${initial?.keyword}" 설정 수정`}
-        </h3>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="text-lg font-bold text-gray-900">
+            {mode === 'add' ? '키워드 추가' : `"${initial?.keyword}" 설정 수정`}
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
-        <div className="space-y-4">
-          {mode === 'add' && (
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                키워드 (여러 개는 줄바꿈으로 구분)
+        {/* Form tabs */}
+        <div className="px-6 border-b border-gray-100 flex items-center gap-1">
+          {([
+            { id: 'basic', label: '기본 설정' },
+            { id: 'time', label: '시간대 전략' },
+            { id: 'region', label: '지역 설정' },
+          ] as { id: FormTab; label: string }[]).map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setFormTab(t.id)}
+              className={`text-sm px-3 py-2.5 -mb-px border-b-2 transition-colors ${
+                formTab === t.id ? 'border-blue-600 text-blue-600 font-medium' : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="overflow-y-auto flex-1 p-6">
+          {formTab === 'basic' && (
+            <div className="space-y-4">
+              {mode === 'add' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                    키워드 (여러 개는 줄바꿈으로 구분)
+                  </label>
+                  <textarea
+                    value={keywordsText}
+                    onChange={(e) => setKeywordsText(e.target.value)}
+                    rows={4}
+                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">목표 순위</label>
+                  <select
+                    value={targetRank}
+                    onChange={(e) => setTargetRank(Number(e.target.value))}
+                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {Array.from({ length: 15 }, (_, i) => i + 1).map((n) => (
+                      <option key={n} value={n}>{n}위</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">매체</label>
+                  <select
+                    value={device}
+                    onChange={(e) => setDevice(e.target.value as Device)}
+                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="ALL">전체 (PC + 모바일)</option>
+                    <option value="PC">PC 전용</option>
+                    <option value="M">모바일 전용</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">최대 입찰가 (원)</label>
+                  <input
+                    type="number"
+                    value={maxBid}
+                    onChange={(e) => setMaxBid(Number(e.target.value))}
+                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">최소 입찰가 (원)</label>
+                  <input
+                    type="number"
+                    value={minBid}
+                    onChange={(e) => setMinBid(Number(e.target.value))}
+                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">전략</label>
+                  <select
+                    value={strategy}
+                    onChange={(e) => setStrategy(e.target.value)}
+                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="target_rank">목표순위 유지</option>
+                    <option value="max_efficiency">최대 효율</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">최저가 대기시간 (분)</label>
+                  <input
+                    type="number"
+                    value={lowestBidWaitMin}
+                    onChange={(e) => setLowestBidWaitMin(Number(e.target.value))}
+                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={lowestBid}
+                  onChange={(e) => setLowestBid(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                최저가 입찰 사용 (목표 미달 시 최저가로 자동 입찰)
               </label>
-              <textarea
-                value={keywordsText}
-                onChange={(e) => setKeywordsText(e.target.value)}
-                rows={5}
-                placeholder={'송도분양\n송도아파트\n송도잔여세대'}
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5">목표 순위</label>
-              <select
-                value={targetRank}
-                onChange={(e) => setTargetRank(Number(e.target.value))}
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                  <option key={n} value={n}>
-                    {n}위
-                  </option>
-                ))}
-              </select>
+          {formTab === 'time' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-medium text-gray-500">빠른 설정:</span>
+                <button onClick={() => applyPreset('peak')} className="text-xs px-3 py-1 bg-blue-50 text-blue-700 rounded border border-blue-200 hover:bg-blue-100">
+                  피크타임(9~18시) 1위
+                </button>
+                <button onClick={() => applyPreset('night')} className="text-xs px-3 py-1 bg-gray-50 text-gray-700 rounded border border-gray-200 hover:bg-gray-100">
+                  야간(22~8시) 중지
+                </button>
+                <button onClick={() => applyPreset('all3')} className="text-xs px-3 py-1 bg-green-50 text-green-700 rounded border border-green-200 hover:bg-green-100">
+                  전시간 3위
+                </button>
+                <button onClick={() => setSchedule({})} className="text-xs px-3 py-1 bg-white text-gray-500 rounded border border-gray-200 hover:bg-gray-50">
+                  초기화
+                </button>
+              </div>
+              <div className="grid grid-cols-6 sm:grid-cols-8 gap-1.5">
+                {Array.from({ length: 24 }, (_, h) => {
+                  const v = schedule[h];
+                  const cls =
+                    v === 'stop' ? 'bg-gray-300 text-gray-700' :
+                    typeof v === 'number' && v <= 2 ? 'bg-blue-500 text-white' :
+                    typeof v === 'number' && v <= 5 ? 'bg-green-500 text-white' :
+                    typeof v === 'number' && v <= 10 ? 'bg-yellow-400 text-yellow-900' :
+                    'bg-white border border-gray-200 text-gray-400';
+                  return (
+                    <div key={h} className="flex flex-col items-center">
+                      <span className="text-[10px] text-gray-400 mb-1">{h}시</span>
+                      <select
+                        value={v == null ? '' : String(v)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '') {
+                            setSchedule((prev) => {
+                              const next = { ...prev };
+                              delete next[h];
+                              return next;
+                            });
+                          } else if (val === 'stop') {
+                            setHour(h, 'stop');
+                          } else {
+                            setHour(h, Number(val));
+                          }
+                        }}
+                        className={`text-[10px] font-bold rounded w-full text-center py-1 border-0 cursor-pointer ${cls}`}
+                      >
+                        <option value="">-</option>
+                        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                          <option key={n} value={n}>{n}위</option>
+                        ))}
+                        <option value="stop">중지</option>
+                      </select>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-3 text-[10px] text-gray-500">
+                <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-blue-500" /> 1~2위</div>
+                <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-green-500" /> 3~5위</div>
+                <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-yellow-400" /> 6~10위</div>
+                <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-gray-300" /> 중지</div>
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5">전략</label>
-              <select
-                value={strategy}
-                onChange={(e) => setStrategy(e.target.value)}
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="target_rank">목표순위 유지</option>
-                <option value="max_efficiency">최대 효율</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5">최대 입찰가 (원)</label>
-              <input
-                type="number"
-                value={maxBid}
-                onChange={(e) => setMaxBid(Number(e.target.value))}
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5">최소 입찰가 (원)</label>
-              <input
-                type="number"
-                value={minBid}
-                onChange={(e) => setMinBid(Number(e.target.value))}
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
+          )}
 
-          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+          {formTab === 'region' && (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500">
+                선택한 지역 기준으로 순위를 측정합니다. "전국"은 기본값입니다.
+              </p>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {REGIONS.map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setRegion(r)}
+                    className={`text-xs px-3 py-2 rounded border transition-colors ${
+                      region === r
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-blue-300'
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="mt-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {error}
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center gap-2 mt-6">
+        <div className="px-6 py-4 border-t border-gray-100 flex items-center gap-2">
           <button
             onClick={onClose}
             className="flex-1 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg"
@@ -895,6 +1491,135 @@ function KeywordFormModal(props: {
           >
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             {mode === 'add' ? '추가' : '저장'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Bulk Settings Modal ---------- */
+
+interface BulkChanges {
+  target_rank?: number;
+  max_bid?: number;
+  device?: Device;
+  lowest_bid?: number;
+}
+
+function BulkSettingsModal(props: {
+  count: number;
+  onClose: () => void;
+  onApply: (changes: BulkChanges) => void;
+  progress: { done: number; total: number } | null;
+}) {
+  const { count, onClose, onApply, progress } = props;
+  const [useTargetRank, setUseTargetRank] = useState(false);
+  const [useMaxBid, setUseMaxBid] = useState(false);
+  const [useDevice, setUseDevice] = useState(false);
+  const [useLowestBid, setUseLowestBid] = useState(false);
+  const [targetRank, setTargetRank] = useState(3);
+  const [maxBid, setMaxBid] = useState(3000);
+  const [device, setDevice] = useState<Device>('ALL');
+  const [lowestBid, setLowestBid] = useState(false);
+
+  const handleApply = () => {
+    const changes: BulkChanges = {};
+    if (useTargetRank) changes.target_rank = targetRank;
+    if (useMaxBid) changes.max_bid = maxBid;
+    if (useDevice) changes.device = device;
+    if (useLowestBid) changes.lowest_bid = lowestBid ? 1 : 0;
+    if (Object.keys(changes).length === 0) return;
+    onApply(changes);
+  };
+
+  const Row = ({
+    enabled, setEnabled, label, children,
+  }: { enabled: boolean; setEnabled: (v: boolean) => void; label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-3 py-2 border-b border-gray-100 last:border-b-0">
+      <input
+        type="checkbox"
+        checked={enabled}
+        onChange={(e) => setEnabled(e.target.checked)}
+        className="rounded border-gray-300 mt-2"
+      />
+      <div className="flex-1">
+        <p className="text-xs font-medium text-gray-700 mb-1">{label}</p>
+        <div className={enabled ? '' : 'opacity-40 pointer-events-none'}>{children}</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 relative">
+        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+          <X className="w-5 h-5" />
+        </button>
+        <h3 className="text-lg font-bold text-gray-900 mb-1">선택 항목 일괄설정</h3>
+        <p className="text-xs text-gray-500 mb-4">{count}개 키워드에 일괄 적용합니다.</p>
+
+        <Row enabled={useTargetRank} setEnabled={setUseTargetRank} label="목표순위 변경">
+          <select
+            value={targetRank}
+            onChange={(e) => setTargetRank(Number(e.target.value))}
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2"
+          >
+            {Array.from({ length: 15 }, (_, i) => i + 1).map((n) => (
+              <option key={n} value={n}>{n}위</option>
+            ))}
+          </select>
+        </Row>
+        <Row enabled={useMaxBid} setEnabled={setUseMaxBid} label="최대입찰가 변경 (원)">
+          <input
+            type="number"
+            value={maxBid}
+            onChange={(e) => setMaxBid(Number(e.target.value))}
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2"
+          />
+        </Row>
+        <Row enabled={useDevice} setEnabled={setUseDevice} label="매체 변경">
+          <select
+            value={device}
+            onChange={(e) => setDevice(e.target.value as Device)}
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2"
+          >
+            <option value="ALL">전체</option>
+            <option value="PC">PC</option>
+            <option value="M">모바일</option>
+          </select>
+        </Row>
+        <Row enabled={useLowestBid} setEnabled={setUseLowestBid} label="최저가 입찰">
+          <select
+            value={lowestBid ? 'on' : 'off'}
+            onChange={(e) => setLowestBid(e.target.value === 'on')}
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2"
+          >
+            <option value="on">ON</option>
+            <option value="off">OFF</option>
+          </select>
+        </Row>
+
+        <div className="flex items-center gap-2 mt-5">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg"
+          >
+            취소
+          </button>
+          <button
+            onClick={handleApply}
+            disabled={!!progress || (!useTargetRank && !useMaxBid && !useDevice && !useLowestBid)}
+            className="flex-1 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {progress ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {progress.done}/{progress.total}
+              </>
+            ) : (
+              `${count}개 적용`
+            )}
           </button>
         </div>
       </div>
