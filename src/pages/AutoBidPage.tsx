@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Plus,
   Zap,
@@ -187,7 +187,6 @@ export function AutoBidPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBulk, setShowBulk] = useState(false);
   const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number | null } | null>(null);
-  const estimateRefetchedRef = useRef(false);
 
   // Sort state
   const [sortKey, setSortKey] = useState<string>('current_bid');
@@ -215,24 +214,51 @@ export function AutoBidPage() {
     setLoadingKw(true);
     setLoadProgress({ loaded: 0, total: null });
     const PAGE = 50;
-    const all: KeywordStat[] = [];
-    let offset = 0;
+    const CHUNK = 4; // subrequest 한도 고려한 동시 페이지 수
+
+    type RawResp =
+      | { data?: any[]; keywords?: any[]; total?: number; total_count?: number; total_keywords?: number }
+      | any[];
+    const fetchPage = async (offset: number): Promise<{ items: any[]; total: number | null }> => {
+      const data = await workerFetch<RawResp>(
+        `/naver/keyword-stats?site_id=${siteId}&offset=${offset}&limit=${PAGE}`,
+      );
+      const rawItems: any[] = Array.isArray(data) ? data : data?.data ?? data?.keywords ?? [];
+      const total = Array.isArray(data)
+        ? null
+        : (data?.total ?? data?.total_count ?? data?.total_keywords ?? null) as number | null;
+      return { items: rawItems, total };
+    };
+
     try {
-      while (true) {
-        const data = await workerFetch<
-          { data?: KeywordStat[]; keywords?: KeywordStat[]; total?: number } | KeywordStat[]
-        >(`/naver/keyword-stats?site_id=${siteId}&offset=${offset}&limit=${PAGE}`);
-        const rawItems: any[] = Array.isArray(data)
-          ? data
-          : data?.data ?? data?.keywords ?? [];
-        const items = rawItems.map(normalizeKeyword);
-        const total = !Array.isArray(data) && typeof data?.total === 'number' ? data.total : null;
-        all.push(...items);
-        setKeywords([...all]);
-        setLoadProgress({ loaded: all.length, total });
-        if (items.length < PAGE) break;
-        offset += PAGE;
-        if (offset > 5000) break; // safety cap
+      // 1) 첫 페이지 즉시 표시
+      const first = await fetchPage(0);
+      const all: any[] = [...first.items];
+      setKeywords(all.map(normalizeKeyword));
+      setLoadProgress({ loaded: all.length, total: first.total });
+
+      // 2) 나머지 페이지 수 결정
+      let remainingPages: number[] = [];
+      if (first.total != null) {
+        const totalPages = Math.ceil(first.total / PAGE);
+        remainingPages = Array.from({ length: Math.max(totalPages - 1, 0) }, (_, i) => i + 1);
+      } else if (first.items.length === PAGE) {
+        // total 모를 때: 첫 페이지가 가득 차면 추가 시도, 빈 페이지 만나면 중단
+        remainingPages = Array.from({ length: 99 }, (_, i) => i + 1);
+      }
+
+      // 3) 청크 단위 병렬 로드
+      let stop = false;
+      for (let i = 0; i < remainingPages.length && !stop; i += CHUNK) {
+        const chunk = remainingPages.slice(i, i + CHUNK);
+        const results = await Promise.all(chunk.map((p) => fetchPage(p * PAGE)));
+        for (const r of results) {
+          all.push(...r.items);
+          if (first.total == null && r.items.length < PAGE) stop = true;
+        }
+        setKeywords(all.map(normalizeKeyword));
+        setLoadProgress({ loaded: all.length, total: first.total });
+        if (all.length > 5000) break; // safety cap
       }
     } catch (e) {
       console.error('keyword-stats load failed', e);
@@ -304,7 +330,6 @@ export function AutoBidPage() {
   useEffect(() => {
     if (!siteId) return;
     if (tab === 'keywords') {
-      estimateRefetchedRef.current = false;
       loadKeywords();
       loadCampaignsGroups();
       loadGroupStrategies();
@@ -490,24 +515,6 @@ export function AutoBidPage() {
     showToast(`${done}개 키워드 등록 완료`);
     loadKeywords();
   };
-
-  // 견적가 자동 재조회: 첫 로드 완료 후 missing > 0이면 30초 뒤 1회 재조회
-  useEffect(() => {
-    if (tab !== 'keywords') return;
-    if (loadingKw) return;
-    if (keywords.length === 0) return;
-    if (estimateRefetchedRef.current) return;
-    const missing = keywords.filter(
-      (k) => k.bid_rank1 == null || k.bid_rank3 == null || k.bid_rank5 == null,
-    ).length;
-    if (missing === 0) return;
-    estimateRefetchedRef.current = true;
-    const timer = setTimeout(() => {
-      loadKeywords();
-    }, 30000);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadingKw, keywords.length, tab]);
 
   const filteredKeywords = useMemo(() => {
     return keywords.filter((k) => {

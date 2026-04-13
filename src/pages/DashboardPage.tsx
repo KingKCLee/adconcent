@@ -126,43 +126,46 @@ export function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId]);
 
-  // AI 전략 제안 - keyword_stats 상위 10개 기반
+  // AI 전략 제안 - keyword_stats 상위 10개 기반 (3초 지연으로 KPI 먼저 표시)
   useEffect(() => {
     if (!siteId || keywords.length === 0) return;
     setAiLoading(true);
-    workerFetch<{ data?: { suggestions?: AiSuggestion[]; actions?: { text: string; level: string }[] } }>(
-      '/ai',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'briefing',
-          data: {
-            keywords: keywords.slice(0, 10).map((k) => ({
-              keyword: k.keyword,
-              current_rank: k.current_rank,
-              current_bid: k.current_bid,
-              target_rank: k.target_rank,
-            })),
-          },
-        }),
-      },
-    )
-      .then((res) => {
-        const sugList = res?.data?.suggestions ?? [];
-        if (sugList.length > 0) {
-          setAiSuggestions(sugList);
-        } else if (res?.data?.actions) {
-          setAiSuggestions(
-            res.data.actions.slice(0, 3).map((a, i) => ({
-              id: `ai-${i}`,
-              title: a.text,
-              desc: '',
-            })),
-          );
-        }
-      })
-      .catch(() => setAiSuggestions([]))
-      .finally(() => setAiLoading(false));
+    const timer = setTimeout(() => {
+      workerFetch<{ data?: { suggestions?: AiSuggestion[]; actions?: { text: string; level: string }[] } }>(
+        '/ai',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'briefing',
+            data: {
+              keywords: keywords.slice(0, 10).map((k) => ({
+                keyword: k.keyword,
+                current_rank: k.current_rank,
+                current_bid: k.current_bid,
+                target_rank: k.target_rank,
+              })),
+            },
+          }),
+        },
+      )
+        .then((res) => {
+          const sugList = res?.data?.suggestions ?? [];
+          if (sugList.length > 0) {
+            setAiSuggestions(sugList);
+          } else if (res?.data?.actions) {
+            setAiSuggestions(
+              res.data.actions.slice(0, 3).map((a, i) => ({
+                id: `ai-${i}`,
+                title: a.text,
+                desc: '',
+              })),
+            );
+          }
+        })
+        .catch(() => setAiSuggestions([]))
+        .finally(() => setAiLoading(false));
+    }, 3000);
+    return () => clearTimeout(timer);
   }, [siteId, keywords]);
 
   const totals = naverStats?.totals ?? { impCnt: 0, clkCnt: 0, salesAmt: 0, crto: 0 };
