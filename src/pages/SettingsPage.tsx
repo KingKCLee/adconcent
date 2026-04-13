@@ -31,7 +31,26 @@ const planColor = (plan?: string) => {
 };
 
 const scriptTagFor = (siteId: string) =>
-  `<script src="${WORKER_URL}/collect?site_id=${siteId}" async></script>`;
+  `<!-- AdConcent 부정클릭 차단 픽셀 -->
+<script>
+(function() {
+  var params = new URLSearchParams(window.location.search);
+  var data = {
+    site_id: '${siteId}',
+    keyword: params.get('nk') || params.get('keyword') || '',
+    device: /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'pc',
+    referrer: document.referrer,
+    landing_url: window.location.href,
+    ts: Date.now()
+  };
+  fetch('${WORKER_URL}/collect', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data),
+    keepalive: true
+  }).catch(function(){});
+})();
+</script>`;
 
 export function SettingsPage() {
   const [email, setEmail] = useState<string>('');
@@ -231,15 +250,18 @@ export function SettingsPage() {
             <span className="text-xs text-gray-400">— {selected.domain}</span>
           </div>
           <p className="text-sm text-gray-500 mb-4">
-            아래 코드를 광고 랜딩 페이지{' '}
-            <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">&lt;head&gt;</code> 영역에 붙여넣으세요.
+            아래 픽셀 코드를 광고 랜딩 페이지{' '}
+            <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">&lt;head&gt;</code> 영역 또는 페이지 최상단에 붙여넣으세요.
+            URL 파라미터 <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">?nk=키워드</code>를 자동 수집합니다.
           </p>
-          <div className="bg-gray-50 rounded-lg p-3 flex items-center gap-2 mb-4">
-            <code className="text-xs flex-1 overflow-x-auto text-gray-700 font-mono whitespace-nowrap">
-              {scriptTagFor(selected.site_id)}
-            </code>
-            <button onClick={handleCopy} className="p-2 rounded hover:bg-gray-200 text-gray-500 shrink-0">
-              {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+          <div className="bg-gray-50 rounded-lg p-3 mb-4">
+            <pre className="text-[11px] text-gray-700 font-mono whitespace-pre-wrap break-all max-h-64 overflow-auto">{scriptTagFor(selected.site_id)}</pre>
+            <button
+              onClick={handleCopy}
+              className="mt-3 text-xs px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 inline-flex items-center gap-1.5"
+            >
+              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? '복사됨' : '코드 복사'}
             </button>
           </div>
           <div className="flex items-center gap-3">

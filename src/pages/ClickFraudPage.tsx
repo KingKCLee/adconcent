@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Shield, Ban, TrendingDown, Copy, Check, Code, AlertTriangle,
-  MousePointerClick, Loader2, Monitor, Smartphone,
+  MousePointerClick, Loader2, Monitor, Smartphone, CircleDollarSign, ShieldCheck,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
@@ -13,7 +13,7 @@ import { UpgradePrompt } from '@/components/ui/UpgradePrompt';
 import { usePlan } from '@/hooks/usePlan';
 import { useSite } from '@/contexts/SiteContext';
 
-type Period = 'today' | '7d' | '30d';
+type Period = 'yesterday' | '7d' | 'this_month' | 'custom';
 
 interface HourBucket {
   hour: number;
@@ -58,7 +58,7 @@ interface StatsDetailResponse {
 }
 
 interface NaverStatsResponse {
-  totals?: { impCnt: number; clkCnt: number; salesAmt: number };
+  totals?: { impCnt: number; clkCnt: number; salesAmt: number; crto?: number };
 }
 
 const WORKER_URL = import.meta.env.VITE_ADCONCENT_WORKER_URL;
@@ -66,15 +66,62 @@ const FALLBACK_AVG_CPC = 800;
 
 const num = (n: number) => (n ?? 0).toLocaleString();
 const won = (n: number) => `₩${num(n ?? 0)}`;
+const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
+
+function buildPixelSnippet(siteId: string) {
+  return `<!-- AdConcent 부정클릭 차단 픽셀 -->
+<script>
+(function() {
+  var params = new URLSearchParams(window.location.search);
+  var data = {
+    site_id: '${siteId}',
+    keyword: params.get('nk') || params.get('keyword') || '',
+    device: /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'pc',
+    referrer: document.referrer,
+    landing_url: window.location.href,
+    ts: Date.now()
+  };
+  fetch('${WORKER_URL}/collect', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data),
+    keepalive: true
+  }).catch(function(){});
+})();
+</script>`;
+}
+
+function rangeFor(p: Period, custom?: { since: string; until: string }) {
+  const today = new Date();
+  if (p === 'yesterday') {
+    const y = new Date(today);
+    y.setDate(today.getDate() - 1);
+    const ys = fmtDate(y);
+    return { since: ys, until: ys };
+  }
+  if (p === '7d') {
+    const s = new Date(today);
+    s.setDate(today.getDate() - 6);
+    return { since: fmtDate(s), until: fmtDate(today) };
+  }
+  if (p === 'this_month') {
+    const first = new Date(today.getFullYear(), today.getMonth(), 1);
+    return { since: fmtDate(first), until: fmtDate(today) };
+  }
+  return custom ?? { since: fmtDate(today), until: fmtDate(today) };
+}
 
 export function ClickFraudPage() {
   const { siteId } = useSite();
   const { plan, isFree } = usePlan();
   const limits = getLimits(plan);
-  const SCRIPT_TAG = `<script src="${WORKER_URL}/collect?site_id=${siteId}" async></script>`;
+  const PIXEL_SNIPPET = buildPixelSnippet(siteId);
 
-  const [period, setPeriod] = useState<Period>('today');
+  const [period, setPeriod] = useState<Period>('7d');
+  const [customSince, setCustomSince] = useState(fmtDate(new Date()));
+  const [customUntil, setCustomUntil] = useState(fmtDate(new Date()));
   const [detail, setDetail] = useState<StatsDetailResponse | null>(null);
+  const [naverTotals, setNaverTotals] = useState<{ clicks: number; cost: number; impressions: number; conversions: number } | null>(null);
   const [avgCpc, setAvgCpc] = useState<number>(FALLBACK_AVG_CPC);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -82,22 +129,25 @@ export function ClickFraudPage() {
   const [blockedThisMonth, setBlockedThisMonth] = useState(0);
   const [showUpgrade, setShowUpgrade] = useState(false);
 
+  const dates = useMemo(
+    () => rangeFor(period, { since: customSince, until: customUntil }),
+    [period, customSince, customUntil],
+  );
+
   const loadStats = () => {
     if (!siteId) return;
     setLoading(true);
-    const today = new Date();
-    const since = new Date(today);
-    since.setDate(since.getDate() - (period === '30d' ? 29 : period === '7d' ? 6 : 0));
-    const fmt = (d: Date) => d.toISOString().slice(0, 10);
     Promise.allSettled([
-      workerFetch<StatsDetailResponse>(`/stats/detail?site_id=${siteId}&period=${period}`),
+      workerFetch<StatsDetailResponse>(
+        `/stats/detail?site_id=${siteId}&since=${dates.since}&until=${dates.until}`,
+      ),
       workerFetch<NaverStatsResponse>('/naver/stats', {
         method: 'POST',
         body: JSON.stringify({
           site_id: siteId,
           ids: [],
-          timeRange: { since: fmt(since), until: fmt(today) },
-          fields: ['clkCnt', 'salesAmt'],
+          timeRange: { since: dates.since, until: dates.until },
+          fields: ['clkCnt', 'impCnt', 'salesAmt', 'crto'],
           idType: 'campaign',
           timeUnit: 'day',
         }),
@@ -107,7 +157,19 @@ export function ClickFraudPage() {
       else setDetail(null);
       if (naverR.status === 'fulfilled') {
         const t = naverR.value?.totals;
-        if (t && t.clkCnt > 0) setAvgCpc(Math.round(t.salesAmt / t.clkCnt));
+        if (t) {
+          setNaverTotals({
+            clicks: t.clkCnt ?? 0,
+            cost: t.salesAmt ?? 0,
+            impressions: t.impCnt ?? 0,
+            conversions: Math.round(t.crto ?? 0),
+          });
+          if (t.clkCnt > 0) setAvgCpc(Math.round(t.salesAmt / t.clkCnt));
+        } else {
+          setNaverTotals(null);
+        }
+      } else {
+        setNaverTotals(null);
       }
       setLoading(false);
     });
@@ -116,17 +178,7 @@ export function ClickFraudPage() {
   useEffect(() => {
     loadStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [siteId, period]);
-
-  // 자동 30초 갱신 (today 기간일 때만)
-  useEffect(() => {
-    if (period !== 'today' || !siteId) return;
-    const id = setInterval(() => {
-      loadStats();
-    }, 30000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [siteId, period]);
+  }, [siteId, dates.since, dates.until]);
 
   const totals = useMemo(() => {
     const t = detail?.totals ?? {};
@@ -157,15 +209,56 @@ export function ClickFraudPage() {
   const canBlock = blockedThisMonth < limits.ipBlockPerMonth;
   const unblockedSuspicious = totals.suspicious;
 
+  const periodLabel =
+    period === 'yesterday' ? '어제' :
+    period === '7d' ? '최근 7일' :
+    period === 'this_month' ? '이번달' :
+    `${dates.since} ~ ${dates.until}`;
+
+  // 네이버 데이터 우선, 없으면 픽셀 totals.totalClicks 폴백
+  const displayClicks = naverTotals?.clicks ?? totals.totalClicks;
+  const displayCost = naverTotals?.cost ?? 0;
+  const displayCpc = naverTotals && naverTotals.clicks > 0
+    ? Math.round(naverTotals.cost / naverTotals.clicks)
+    : avgCpc;
+
   const kpis = [
-    { label: '총 클릭수', icon: MousePointerClick, color: 'text-blue-600', bg: 'bg-blue-50', value: `${num(totals.totalClicks)}건`, sub: period === 'today' ? '오늘' : period === '7d' ? '최근 7일' : '최근 30일' },
-    { label: '차단 건수', icon: Ban, color: 'text-red-600', bg: 'bg-red-50', value: `${num(totals.blocked)}건`, sub: `차단율 ${blockRate}%` },
-    { label: '의심 클릭', icon: AlertTriangle, color: 'text-amber-600', bg: 'bg-amber-50', value: `${num(totals.suspicious)}건`, sub: '검토 대기' },
-    { label: '절감 금액', icon: TrendingDown, color: 'text-green-600', bg: 'bg-green-50', value: won(savedAmount), sub: `평균 CPC ${won(avgCpc)}` },
+    {
+      label: '총 클릭수',
+      icon: MousePointerClick,
+      color: 'text-blue-600',
+      bg: 'bg-blue-50',
+      value: `${num(displayClicks)}건`,
+      sub: naverTotals ? `네이버 ${periodLabel}` : `픽셀 ${periodLabel}`,
+    },
+    {
+      label: '총 광고비',
+      icon: CircleDollarSign,
+      color: 'text-violet-600',
+      bg: 'bg-violet-50',
+      value: won(displayCost),
+      sub: naverTotals ? '네이버 검색광고' : '데이터 없음',
+    },
+    {
+      label: '평균 CPC',
+      icon: TrendingDown,
+      color: 'text-orange-600',
+      bg: 'bg-orange-50',
+      value: won(displayCpc),
+      sub: '클릭당 비용',
+    },
+    {
+      label: '차단 / 절감',
+      icon: ShieldCheck,
+      color: 'text-green-600',
+      bg: 'bg-green-50',
+      value: `${num(totals.blocked)}건`,
+      sub: `절감 ${won(savedAmount)} · 차단율 ${blockRate}%`,
+    },
   ];
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(SCRIPT_TAG);
+    navigator.clipboard.writeText(PIXEL_SNIPPET);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -200,19 +293,44 @@ export function ClickFraudPage() {
   return (
     <div className="space-y-6">
       {/* Period selector */}
-      <div className="bg-white rounded-xl border border-gray-200 px-5 py-3 flex items-center gap-2">
+      <div className="bg-white rounded-xl border border-gray-200 px-5 py-3 flex items-center gap-2 flex-wrap">
         <span className="text-xs text-gray-500 mr-2">기간:</span>
-        {(['today', '7d', '30d'] as Period[]).map((p) => (
+        {(
+          [
+            { id: 'yesterday', label: '어제' },
+            { id: '7d', label: '7일' },
+            { id: 'this_month', label: '이번달' },
+            { id: 'custom', label: '직접입력' },
+          ] as { id: Period; label: string }[]
+        ).map((p) => (
           <button
-            key={p}
-            onClick={() => setPeriod(p)}
+            key={p.id}
+            onClick={() => setPeriod(p.id)}
             className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
-              period === p ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              period === p.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
-            {p === 'today' ? '오늘' : p === '7d' ? '7일' : '30일'}
+            {p.label}
           </button>
         ))}
+        {period === 'custom' && (
+          <>
+            <input
+              type="date"
+              value={customSince}
+              onChange={(e) => setCustomSince(e.target.value)}
+              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <span className="text-xs text-gray-400">~</span>
+            <input
+              type="date"
+              value={customUntil}
+              onChange={(e) => setCustomUntil(e.target.value)}
+              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </>
+        )}
+        <span className="text-xs text-gray-400 ml-2">{dates.since} ~ {dates.until}</span>
         <button onClick={loadStats} className="ml-auto text-xs text-blue-600 hover:underline">
           새로고침
         </button>
@@ -297,7 +415,22 @@ export function ClickFraudPage() {
             <Loader2 className="w-5 h-5 animate-spin mx-auto" />
           </div>
         ) : topIps.length === 0 ? (
-          <div className="p-8 text-center text-sm text-gray-400">집계된 IP가 없습니다</div>
+          <div className="p-8 text-center">
+            <p className="text-sm text-gray-500 mb-2">집계된 IP가 없습니다</p>
+            <p className="text-xs text-gray-400 mb-4">
+              💡 픽셀을 설치하면 IP별 클릭 패턴 · 봇 탐지 · 차단 기능을 사용할 수 있습니다.
+            </p>
+            <div className="bg-gray-50 rounded-lg p-3 max-w-xl mx-auto text-left">
+              <pre className="text-[10px] text-gray-700 font-mono whitespace-pre-wrap break-all max-h-40 overflow-auto">{PIXEL_SNIPPET}</pre>
+              <button
+                onClick={handleCopy}
+                className="mt-2 text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 inline-flex items-center gap-1"
+              >
+                {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                {copied ? '복사됨' : '코드 복사'}
+              </button>
+            </div>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -425,16 +558,21 @@ export function ClickFraudPage() {
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <div className="flex items-center gap-2 mb-3">
           <Code className="w-5 h-5 text-blue-600" />
-          <h3 className="font-semibold text-gray-900">스크립트 설치 가이드</h3>
+          <h3 className="font-semibold text-gray-900">픽셀 설치 가이드</h3>
         </div>
         <p className="text-sm text-gray-500 mb-4">
-          아래 스크립트를 광고 랜딩 페이지의{' '}
-          <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">&lt;head&gt;</code> 안에 붙여넣으세요.
+          아래 픽셀 코드를 광고 랜딩 페이지의{' '}
+          <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">&lt;head&gt;</code> 또는 페이지 최상단에 붙여넣으세요.
+          URL 파라미터 <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">?nk=키워드</code>를 자동 수집합니다.
         </p>
-        <div className="bg-gray-50 rounded-lg p-3 flex items-center gap-2 mb-4">
-          <code className="text-xs flex-1 overflow-x-auto text-gray-700 font-mono">{SCRIPT_TAG}</code>
-          <button onClick={handleCopy} className="p-2 rounded hover:bg-gray-200 text-gray-500 shrink-0">
-            {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+        <div className="bg-gray-50 rounded-lg p-3 mb-4">
+          <pre className="text-[11px] text-gray-700 font-mono whitespace-pre-wrap break-all max-h-64 overflow-auto">{PIXEL_SNIPPET}</pre>
+          <button
+            onClick={handleCopy}
+            className="mt-3 text-xs px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 inline-flex items-center gap-1.5"
+          >
+            {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? '복사됨' : '코드 복사'}
           </button>
         </div>
         <div className="flex items-center gap-3">
