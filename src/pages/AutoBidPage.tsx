@@ -248,12 +248,19 @@ export function AutoBidPage() {
   const loadCampaignsGroups = async () => {
     if (!siteId) return;
     try {
-      const data = await workerFetch<{ data?: CampaignGroup[]; campaigns?: CampaignGroup[] } | CampaignGroup[]>(
-        `/naver/campaigns-groups?site_id=${siteId}`,
-      );
-      const list: CampaignGroup[] = Array.isArray(data)
+      const data = await workerFetch<any>(`/naver/campaigns-groups?site_id=${siteId}`);
+      const raw: any[] = Array.isArray(data)
         ? data
         : data?.data ?? data?.campaigns ?? [];
+      // 네이버 API 원본(camelCase)과 D1 형태(snake_case) 모두 정규화
+      const list: CampaignGroup[] = raw.map((c: any) => ({
+        campaign_id: c.campaign_id ?? c.nccCampaignId ?? c.campaignId ?? c.id ?? '',
+        campaign_name: c.campaign_name ?? c.campaignName ?? c.name ?? '(이름없음)',
+        groups: (c.groups ?? c.adgroups ?? []).map((g: any) => ({
+          group_id: g.group_id ?? g.nccAdgroupId ?? g.adgroupId ?? g.id ?? '',
+          group_name: g.group_name ?? g.adgroupName ?? g.name ?? '(이름없음)',
+        })),
+      }));
       setCampaignsGroups(list);
       if (list.length > 0 && !activeCampaign) setActiveCampaign(list[0].campaign_id);
     } catch {
@@ -334,7 +341,29 @@ export function AutoBidPage() {
       setShowUpgrade(true);
       return;
     }
-    if (!kw.bid_setting_id) return;
+    // bid_settings 미존재 시 자동 생성 후 활성화
+    if (!kw.bid_setting_id) {
+      try {
+        await workerFetch('/naver/bid-settings', {
+          method: 'POST',
+          body: JSON.stringify({
+            site_id: siteId,
+            keyword: kw.keyword,
+            keyword_id: kw.keyword_id ?? `manual_${kw.keyword}`,
+            target_rank: 3,
+            max_bid: 3000,
+            min_bid: 70,
+            strategy: 'target_rank',
+            is_active: 1,
+          }),
+        });
+        showToast(`"${kw.keyword}" 자동입찰 등록 완료`);
+        loadKeywords();
+      } catch (e: any) {
+        showToast(`등록 실패: ${e?.message ?? ''}`);
+      }
+      return;
+    }
     const next = kw.is_active ? 0 : 1;
     setKeywords((prev) =>
       prev.map((k) => (k.bid_setting_id === kw.bid_setting_id ? { ...k, is_active: next } : k)),
@@ -733,7 +762,20 @@ export function AutoBidPage() {
           onAdd={() => (isFree ? setShowUpgrade(true) : setShowAdd(true))}
           onRun={() => runOptimizer(false)}
           onPreview={() => runOptimizer(true)}
-          onEdit={(kw) => (isFree ? setShowUpgrade(true) : setEditTarget(kw))}
+          onEdit={(kw) => {
+            if (isFree) {
+              setShowUpgrade(true);
+              return;
+            }
+            // bid_settings 없으면 add 모드로 모달, 키워드만 미리 채움
+            if (!kw.bid_setting_id) {
+              setShowAdd(true);
+              // 짧은 마운트 후 keywordsText 초기화는 모달 내부에서 처리되므로
+              // 여기선 별도 prefill state 없이 사용자 직접 입력으로 둠
+              return;
+            }
+            setEditTarget(kw);
+          }}
           onDelete={deleteSetting}
           onToggle={toggleActive}
           campaignsGroups={campaignsGroups}
@@ -1176,10 +1218,14 @@ function KeywordsTab(props: KeywordsTabProps) {
                 const checked = selectedIds.has(idStr);
                 const dev = (kw.device ?? 'ALL') as Device;
                 const lowestOn = !!kw.lowest_bid;
-                const groupKey = `${kw.campaign_id ?? ''}::${kw.group_id ?? ''}`;
-                const groupStrat = strategyByGroupKey.get(groupKey);
-                const sourceLabel = hasSetting ? '' : groupStrat ? '(그룹)' : '(기본)';
-                const sourceCls = hasSetting ? '' : groupStrat ? 'text-gray-500' : 'text-gray-300';
+                // 그룹 전략 매칭: 키워드와 group_id가 정확히 일치할 때만 상속
+                const hasGroupId = !!(kw.group_id && kw.group_id !== '*');
+                const groupKey = hasGroupId ? `${kw.campaign_id ?? ''}::${kw.group_id}` : '';
+                const groupStrat = hasGroupId ? strategyByGroupKey.get(groupKey) : undefined;
+                // 추가 가드: strategy의 group_id가 와일드카드(*)인 경우 상속 금지
+                const validGroupStrat = groupStrat && groupStrat.group_id !== '*' ? groupStrat : undefined;
+                const sourceLabel = hasSetting ? '' : validGroupStrat ? '(그룹)' : '(기본)';
+                const sourceCls = hasSetting ? '' : validGroupStrat ? 'text-gray-500' : 'text-gray-300';
                 return (
                   <tr key={`${kw.keyword}-${i}`} className="border-b border-gray-50 hover:bg-gray-50">
                     <td className="px-3 py-3 text-center">
@@ -1300,7 +1346,7 @@ function KeywordsTab(props: KeywordsTabProps) {
                     <td className="px-3 py-3 text-right text-gray-700">
                       {won(kw.current_bid)}
                       {(() => {
-                        const effTarget = kw.target_rank ?? groupStrat?.target_rank ?? null;
+                        const effTarget = kw.target_rank ?? validGroupStrat?.target_rank ?? null;
                         if (effTarget == null) return null;
                         return (
                           <span className="block text-[10px] text-gray-400">
@@ -1342,23 +1388,31 @@ function KeywordsTab(props: KeywordsTabProps) {
                       )}
                     </td>
                     <td className="px-3 py-3 text-center">
-                      {hasSetting ? (
-                        <button
-                          onClick={() => onToggle(kw)}
-                          title={isFree ? '자동입찰은 Starter부터' : ''}
-                          className={`relative inline-flex items-center w-9 h-5 rounded-full transition-colors ${
-                            isFree ? 'bg-gray-300 cursor-not-allowed' : isActive ? 'bg-blue-600' : 'bg-gray-300'
+                      <button
+                        onClick={() => onToggle(kw)}
+                        title={
+                          isFree
+                            ? '자동입찰은 Starter부터'
+                            : !hasSetting
+                            ? '클릭하여 자동입찰 등록'
+                            : ''
+                        }
+                        className={`relative inline-flex items-center w-9 h-5 rounded-full transition-colors ${
+                          isFree
+                            ? 'bg-gray-300 cursor-not-allowed'
+                            : !hasSetting
+                            ? 'bg-gray-200 hover:bg-gray-300'
+                            : isActive
+                            ? 'bg-blue-600'
+                            : 'bg-gray-300'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block w-3.5 h-3.5 bg-white rounded-full shadow transform transition-transform ${
+                            !isFree && hasSetting && isActive ? 'translate-x-[18px]' : 'translate-x-[3px]'
                           }`}
-                        >
-                          <span
-                            className={`inline-block w-3.5 h-3.5 bg-white rounded-full shadow transform transition-transform ${
-                              !isFree && isActive ? 'translate-x-[18px]' : 'translate-x-[3px]'
-                            }`}
-                          />
-                        </button>
-                      ) : (
-                        <span className="text-xs text-gray-300">-</span>
-                      )}
+                        />
+                      </button>
                     </td>
                     <td className="px-3 py-3 text-center">
                       <div className="inline-flex items-center gap-1">
