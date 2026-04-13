@@ -5,8 +5,9 @@ import {
   AlertTriangle, ArrowRight, Zap, X,
 } from 'lucide-react';
 import { workerFetch } from '@/lib/api';
-import { CURRENT_PLAN, getLimits } from '@/lib/plans';
+import { getLimits } from '@/lib/plans';
 import { supabase } from '@/lib/supabase';
+import { usePlan } from '@/hooks/usePlan';
 
 interface StatsResponse {
   ips: { ip: string; count: number; events: { event: string; time: string }[] }[];
@@ -104,6 +105,7 @@ function getLast7Days(): string[] {
 }
 
 export function DashboardPage() {
+  const { plan } = usePlan(SITE_ID);
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [bidLogs, setBidLogs] = useState<BidLog[]>([]);
   const [keywords, setKeywords] = useState<KeywordStat[]>([]);
@@ -186,7 +188,7 @@ export function DashboardPage() {
 
   const totalSavings = monthSavings + blockSavings;
 
-  const aiLimit = getLimits(CURRENT_PLAN).aiAnalysisPerMonth;
+  const aiLimit = getLimits(plan).aiAnalysisPerMonth;
   const aiLimitLabel = aiLimit === Infinity ? '∞' : aiLimit;
 
   const recentBidAdjustments = useMemo(() => {
@@ -226,7 +228,7 @@ export function DashboardPage() {
       color: 'text-violet-600',
       bg: 'bg-violet-50',
       value: `${aiUsage}/${aiLimitLabel}회`,
-      sub: `${CURRENT_PLAN.toUpperCase()} 플랜`,
+      sub: `${plan.toUpperCase()} 플랜`,
     },
     {
       label: '이번달 절감액',

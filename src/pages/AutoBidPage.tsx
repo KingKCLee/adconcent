@@ -12,9 +12,9 @@ import {
   TrendingDown,
   Minus,
 } from 'lucide-react';
-import { CURRENT_PLAN } from '@/lib/plans';
 import { UpgradePrompt } from '@/components/ui/UpgradePrompt';
 import { workerFetch } from '@/lib/api';
+import { usePlan } from '@/hooks/usePlan';
 
 const SITE_ID = 'hitbunyang';
 
@@ -79,7 +79,7 @@ function getStatus(kw: KeywordStat): { label: string; cls: string } {
 }
 
 export function AutoBidPage() {
-  const isFree = CURRENT_PLAN === 'free';
+  const { isFree } = usePlan(SITE_ID);
   const [tab, setTab] = useState<Tab>('keywords');
   const [showUpgrade, setShowUpgrade] = useState(false);
 

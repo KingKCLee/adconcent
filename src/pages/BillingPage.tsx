@@ -1,4 +1,6 @@
 import { Check, Sparkles, X } from 'lucide-react';
+import { usePlan } from '@/hooks/usePlan';
+import type { PlanType } from '@/lib/plans';
 
 const usage = [
   { label: 'IP 차단', current: 1, max: 3 },
@@ -20,7 +22,6 @@ const plans = [
       { text: '환급 CSV', has: false },
       { text: '구글·Meta 연동', has: false },
     ],
-    current: true,
   },
   {
     name: 'Starter',
@@ -68,7 +69,24 @@ const faqs = [
   { q: 'Free 플랜은 영구적으로 사용 가능한가요?', a: '네, Free 플랜은 계속 무료로 이용 가능합니다. 단, 사용량 제한이 있으며 일부 고급 기능은 제한됩니다.' },
 ];
 
+const PLAN_BADGE_STYLES: Record<PlanType, string> = {
+  free: 'bg-gray-100 text-gray-700',
+  starter: 'bg-emerald-100 text-emerald-700',
+  growth: 'bg-blue-100 text-blue-700',
+  pro: 'bg-violet-100 text-violet-700',
+};
+
+const PLAN_DESC: Record<PlanType, string> = {
+  free: '무료 플랜을 이용 중입니다',
+  starter: 'Starter 플랜을 이용 중입니다',
+  growth: 'Growth 플랜을 이용 중입니다',
+  pro: 'Pro 플랜을 이용 중입니다',
+};
+
 export function BillingPage() {
+  const { plan: currentPlan, isLoading: planLoading } = usePlan();
+  const planLabel = currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1);
+
   return (
     <div className="space-y-6 max-w-7xl">
       {/* Current plan */}
@@ -77,9 +95,11 @@ export function BillingPage() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <h3 className="text-lg font-bold text-gray-900">현재 플랜</h3>
-              <span className="text-xs font-bold bg-gray-100 text-gray-700 px-2.5 py-1 rounded-full">Free</span>
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${PLAN_BADGE_STYLES[currentPlan]}`}>
+                {planLoading ? '...' : planLabel}
+              </span>
             </div>
-            <p className="text-sm text-gray-500">무료 플랜을 이용 중입니다</p>
+            <p className="text-sm text-gray-500">{PLAN_DESC[currentPlan]}</p>
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -115,7 +135,7 @@ export function BillingPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
           {plans.map((plan) => {
             const isHighlighted = plan.color === 'violet';
-            const isCurrent = plan.current;
+            const isCurrent = plan.name.toLowerCase() === currentPlan;
             return (
               <div
                 key={plan.name}

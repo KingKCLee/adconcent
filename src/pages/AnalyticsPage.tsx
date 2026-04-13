@@ -3,6 +3,7 @@ import { Sparkles, Loader2, AlertCircle, Lightbulb, CheckCircle2 } from 'lucide-
 import { workerFetch } from '@/lib/api';
 import { getLimits } from '@/lib/plans';
 import { UpgradePrompt } from '@/components/ui/UpgradePrompt';
+import { usePlan } from '@/hooks/usePlan';
 
 type Tab = 'briefing' | 'keyword' | 'ad' | 'weekly';
 
@@ -22,8 +23,6 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'weekly', label: '주간 비교' },
 ];
 
-const FREE_QUOTA = getLimits().aiAnalysisPerMonth;
-
 async function callAi<T>(action: string, data: Record<string, unknown>): Promise<T | null> {
   const res = await workerFetch<{ data: T }>('/ai', {
     method: 'POST',
@@ -33,6 +32,9 @@ async function callAi<T>(action: string, data: Record<string, unknown>): Promise
 }
 
 export function AnalyticsPage() {
+  const { plan } = usePlan();
+  const FREE_QUOTA = getLimits(plan).aiAnalysisPerMonth;
+  const QUOTA_LABEL = FREE_QUOTA === Infinity ? '∞' : FREE_QUOTA;
   const [tab, setTab] = useState<Tab>('briefing');
   const [usage, setUsage] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -120,7 +122,7 @@ export function AnalyticsPage() {
         </div>
         <span className="text-sm font-medium">
           <span className="text-violet-600">{usage}</span>
-          <span className="text-gray-400"> / {FREE_QUOTA}회 (Free 플랜)</span>
+          <span className="text-gray-400"> / {QUOTA_LABEL}회 ({plan.toUpperCase()} 플랜)</span>
         </span>
       </div>
 
@@ -140,7 +142,7 @@ export function AnalyticsPage() {
               <h3 className="text-lg font-semibold text-gray-900 mb-2">오늘의 광고 성과를 AI가 분석합니다</h3>
               <p className="text-sm text-gray-500 mb-2">노출, 클릭, 전환, CPA를 종합하여 액션을 제안합니다.</p>
               {usage >= FREE_QUOTA && (
-                <p className="text-xs text-amber-600 font-medium mb-4">이번달 사용 완료 ({usage}/{FREE_QUOTA}회)</p>
+                <p className="text-xs text-amber-600 font-medium mb-4">이번달 사용 완료 ({usage}/{QUOTA_LABEL}회)</p>
               )}
               <button
                 onClick={handleBriefing}
@@ -284,8 +286,8 @@ export function AnalyticsPage() {
       {showUpgrade && (
         <UpgradePrompt
           feature="AI 분석"
-          description={`Free 플랜은 월 ${FREE_QUOTA}회만 AI 분석이 가능합니다. Starter로 업그레이드하면 월 30회 사용할 수 있습니다.`}
-          usage={`이번달 ${usage}/${FREE_QUOTA}회 사용 완료`}
+          description={`현재 ${plan.toUpperCase()} 플랜은 월 ${QUOTA_LABEL}회만 AI 분석이 가능합니다. 상위 플랜으로 업그레이드하세요.`}
+          usage={`이번달 ${usage}/${QUOTA_LABEL}회 사용 완료`}
           onClose={() => setShowUpgrade(false)}
         />
       )}

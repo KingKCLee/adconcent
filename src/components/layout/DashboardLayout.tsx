@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { usePlan } from '@/hooks/usePlan';
 import {
   LayoutDashboard, TrendingUp, ShoppingBag, ShieldAlert,
   Sparkles, BarChart3, FileText, Globe, Play,
@@ -53,10 +54,19 @@ const pageTitles: Record<string, string> = {
   '/dashboard/billing': '결제/플랜',
 };
 
+const PLAN_BADGE_COLOR: Record<string, string> = {
+  free: 'bg-[#1E293B] text-[#94A3B8]',
+  starter: 'bg-emerald-600 text-white',
+  growth: 'bg-blue-600 text-white',
+  pro: 'bg-violet-600 text-white',
+};
+
 export function DashboardLayout() {
   const { user, signOut } = useAuth();
   const location = useLocation();
   const pageTitle = pageTitles[location.pathname] || '대시보드';
+  const { plan } = usePlan();
+  const planLabel = plan.charAt(0).toUpperCase() + plan.slice(1);
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `flex items-center gap-3 px-3 py-2 rounded-md text-[13px] transition-all ${
@@ -112,7 +122,9 @@ export function DashboardLayout() {
               <Icon className="w-4 h-4 shrink-0 text-[#64748B]" />
               <span>{label}</span>
               {label === '결제/플랜' && (
-                <span className="ml-auto text-[9px] font-bold bg-[#1E293B] text-[#64748B] px-1.5 py-0.5 rounded">Free</span>
+                <span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded ${PLAN_BADGE_COLOR[plan] ?? PLAN_BADGE_COLOR.free}`}>
+                  {planLabel}
+                </span>
               )}
             </NavLink>
           ))}

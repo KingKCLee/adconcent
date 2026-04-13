@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { Shield, Ban, TrendingDown, Copy, Check, Code, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { workerFetch } from '@/lib/api';
-import { getLimits, CURRENT_PLAN } from '@/lib/plans';
+import { getLimits } from '@/lib/plans';
 import { UpgradePrompt } from '@/components/ui/UpgradePrompt';
+import { usePlan } from '@/hooks/usePlan';
 
 interface StatsResponse {
   ips: { ip: string; count: number; firstSeen: string; lastSeen: string; events: { event: string; time: string }[] }[];
@@ -16,8 +17,8 @@ const SCRIPT_TAG = `<script src="${WORKER_URL}/collect?site_id=${SITE_ID}" async
 const AVG_CPC = 800;
 
 export function ClickFraudPage() {
-  const limits = getLimits();
-  const isFree = CURRENT_PLAN === 'free';
+  const { plan, isFree } = usePlan(SITE_ID);
+  const limits = getLimits(plan);
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
