@@ -2473,9 +2473,10 @@ function GroupStrategyModal(props: {
   };
 
   const handleApplyToAll = async () => {
-    const confirmMsg = allGroupsMode
-      ? `전체 ${allGroupTargets.length}개 그룹의 ${keywordCount}개 키워드에 전략을 적용합니다. 계속하시겠습니까?`
-      : `이 그룹의 ${keywordCount}개 키워드에 전략을 적용합니다. 계속하시겠습니까?`;
+    const scopeMsg = allGroupsMode
+      ? `전체 ${allGroupTargets.length}개 그룹의 ${keywordCount}개 키워드에 전략을 적용합니다.`
+      : `이 그룹의 ${keywordCount}개 키워드에 전략을 적용합니다.`;
+    const confirmMsg = `${scopeMsg}\n\n⚠️ 기존 개별 설정이 그룹 전략으로 덮어씌워집니다.`;
     if (!confirm(confirmMsg)) return;
     setError(null);
     setApplying(true);
@@ -2497,6 +2498,7 @@ function GroupStrategyModal(props: {
                 site_id: siteId,
                 campaign_id: t.campaign_id,
                 group_id: t.group_id,
+                force: true,
               }),
             }),
           ),
@@ -2512,6 +2514,7 @@ function GroupStrategyModal(props: {
             site_id: siteId,
             campaign_id: campaignId,
             group_id: groupId,
+            force: true,
           }),
         });
       }
