@@ -491,38 +491,6 @@ export function AutoBidPage() {
     loadKeywords();
   };
 
-  // 검증: filterGroup 변경 시 매칭 카운트 출력
-  useEffect(() => {
-    if (filterGroup === 'all') return;
-    // eslint-disable-next-line no-console
-    console.log(
-      'filterGroup:',
-      filterGroup,
-      'matched:',
-      keywords.filter((k) => (k as any).ncc_adgroup_id === filterGroup).length,
-    );
-  }, [filterGroup, keywords]);
-
-  // 디버그: 그룹 필터링 매칭 확인용 (한 번만)
-  const debugLoggedRef = useRef(false);
-  useEffect(() => {
-    if (debugLoggedRef.current) return;
-    if (campaignsGroups.length === 0 || keywords.length === 0) return;
-    debugLoggedRef.current = true;
-    // eslint-disable-next-line no-console
-    console.log('[AutoBid debug] campaignsGroups groupIds:',
-      campaignsGroups.flatMap((c) => (c.groups ?? []).map((g) => g.group_id)));
-    // eslint-disable-next-line no-console
-    console.log('[AutoBid debug] keyword sample (first 5):',
-      keywords.slice(0, 5).map((k) => ({
-        keyword: k.keyword,
-        group_id: k.group_id,
-        ncc_adgroup_id: k.ncc_adgroup_id,
-        campaign_id: k.campaign_id,
-        rawKeys: Object.keys(k),
-      })));
-  }, [campaignsGroups, keywords]);
-
   // 견적가 자동 재조회: 첫 로드 완료 후 missing > 0이면 30초 뒤 1회 재조회
   useEffect(() => {
     if (tab !== 'keywords') return;
@@ -983,9 +951,9 @@ export function AutoBidPage() {
             loadGroupStrategies();
             showToast('그룹 전략 저장 완료');
           }}
-          onApplyToAll={(n) => {
+          onApplyToAll={async (n) => {
             setEditingGroupKey(null);
-            loadKeywords();
+            await loadKeywords();
             showToast(`${n}개 키워드에 그룹 전략 적용 완료`);
           }}
         />
@@ -1007,10 +975,10 @@ export function AutoBidPage() {
             loadGroupStrategies();
             showToast('전체 그룹 전략 저장 완료');
           }}
-          onApplyToAll={(n) => {
+          onApplyToAll={async (n) => {
             setShowAllGroupsBulk(false);
-            loadKeywords();
-            loadGroupStrategies();
+            await loadKeywords();
+            await loadGroupStrategies();
             showToast(`${n}개 키워드에 일괄 적용 완료`);
           }}
         />
@@ -2405,7 +2373,7 @@ function GroupStrategyModal(props: {
   campaignsGroups?: CampaignGroup[];
   onClose: () => void;
   onSaved: () => void;
-  onApplyToAll: (n: number) => void;
+  onApplyToAll: (n: number) => void | Promise<void>;
 }) {
   const {
     siteId, campaignId, groupId, groupName, existing, keywordCount,
@@ -2483,16 +2451,6 @@ function GroupStrategyModal(props: {
     try {
       const payload = buildPayload();
       if (allGroupsMode) {
-        // eslint-disable-next-line no-console
-        console.log('[GroupStrategy] apply (all groups):', {
-          targets: allGroupTargets.length,
-          force: true,
-          target_rank: payload.target_rank,
-          max_bid: payload.max_bid,
-          min_bid: payload.min_bid,
-          device: payload.device,
-          lowest_bid: payload.lowest_bid,
-        });
         await Promise.allSettled(
           allGroupTargets.map((t) =>
             workerFetch('/naver/group-strategy', {
@@ -2501,7 +2459,7 @@ function GroupStrategyModal(props: {
             }),
           ),
         );
-        const applyResults = await Promise.allSettled(
+        await Promise.allSettled(
           allGroupTargets.map((t) =>
             workerFetch('/naver/group-strategy/apply', {
               method: 'POST',
@@ -2514,23 +2472,11 @@ function GroupStrategyModal(props: {
             }),
           ),
         );
-        // eslint-disable-next-line no-console
-        console.log('[GroupStrategy] apply responses (all groups):', applyResults);
       } else {
-        // eslint-disable-next-line no-console
-        console.log(
-          '[GroupStrategy] apply called - group_id:', groupId,
-          'site_id:', siteId,
-          'force:', true,
-          'target_rank:', targetRank,
-          'max_bid:', maxBid,
-        );
-        const saveRes = await workerFetch('/naver/group-strategy', {
+        await workerFetch('/naver/group-strategy', {
           method: 'POST',
           body: JSON.stringify(payload),
         });
-        // eslint-disable-next-line no-console
-        console.log('[GroupStrategy] save response:', saveRes);
         const WORKER = import.meta.env.VITE_ADCONCENT_WORKER_URL;
         const applyRes = await fetch(`${WORKER}/naver/group-strategy/apply`, {
           method: 'POST',
@@ -2542,20 +2488,13 @@ function GroupStrategyModal(props: {
             force: true,
           }),
         });
-        const applyData = await applyRes.json().catch(() => ({}));
-        // eslint-disable-next-line no-console
-        console.log(
-          '[GroupStrategy] apply response - status:', applyRes.status,
-          'data:', JSON.stringify(applyData),
-        );
         if (!applyRes.ok) {
+          const applyData = await applyRes.json().catch(() => ({}));
           throw new Error(applyData?.error || `apply 실패 (${applyRes.status})`);
         }
       }
-      onApplyToAll(keywordCount);
+      await onApplyToAll(keywordCount);
     } catch (e: any) {
-      // eslint-disable-next-line no-console
-      console.error('[GroupStrategy] apply error:', e);
       setError(e?.message ?? '적용 실패');
     } finally {
       setApplying(false);
