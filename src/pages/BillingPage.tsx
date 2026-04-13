@@ -1,6 +1,9 @@
-import { Check, Sparkles, X } from 'lucide-react';
+import { useState } from 'react';
+import { Check, Sparkles, X, Loader2 } from 'lucide-react';
 import { usePlan } from '@/hooks/usePlan';
+import { useSite } from '@/contexts/SiteContext';
 import type { PlanType } from '@/lib/plans';
+import { workerFetch } from '@/lib/api';
 
 const usage = [
   { label: 'IP 차단', current: 1, max: 3 },
@@ -85,7 +88,15 @@ const PLAN_DESC: Record<PlanType, string> = {
 
 export function BillingPage() {
   const { plan: currentPlan, isLoading: planLoading } = usePlan();
+  const { siteId, refresh } = useSite();
   const planLabel = currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1);
+  const [upgradeTarget, setUpgradeTarget] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const showToast = (m: string) => {
+    setToast(m);
+    setTimeout(() => setToast(null), 3500);
+  };
 
   return (
     <div className="space-y-6 max-w-7xl">
@@ -182,7 +193,8 @@ export function BillingPage() {
                   ))}
                 </ul>
                 <button
-                  disabled={isCurrent}
+                  disabled={isCurrent || planLoading}
+                  onClick={() => setUpgradeTarget(plan.name.toLowerCase())}
                   className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${
                     isCurrent ? 'bg-gray-100 text-gray-400 cursor-not-allowed' :
                     plan.color === 'violet' ? 'bg-violet-600 text-white hover:bg-violet-700' :
@@ -213,6 +225,123 @@ export function BillingPage() {
           ))}
         </div>
       </section>
+
+      {upgradeTarget && (
+        <UpgradeModal
+          targetPlan={upgradeTarget}
+          siteId={siteId}
+          onClose={() => setUpgradeTarget(null)}
+          onSuccess={async () => {
+            setUpgradeTarget(null);
+            await refresh();
+            showToast(`업그레이드 완료! ${upgradeTarget.charAt(0).toUpperCase() + upgradeTarget.slice(1)} 플랜이 활성화되었습니다`);
+          }}
+          onError={(msg) => {
+            setUpgradeTarget(null);
+            showToast(`업그레이드 실패: ${msg}`);
+          }}
+        />
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white text-sm px-5 py-3 rounded-xl shadow-lg max-w-md text-center">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const PLAN_PRICES: Record<string, string> = {
+  starter: '9,900',
+  growth: '24,900',
+  pro: '49,900',
+};
+
+const PLAN_BENEFITS: Record<string, string[]> = {
+  starter: ['IP 차단 무제한', 'AI 분석 월 30회', '자동입찰 키워드 50개', '클릭 로그 90일'],
+  growth: ['Starter 전부 포함', '구글 광고 연동', '키워드 자동 확장', 'AI 주간 리포트'],
+  pro: ['Growth 전부 포함', 'Meta·YouTube 연동', 'AI 분석 무제한', '다중 사이트 5개'],
+};
+
+function UpgradeModal(props: {
+  targetPlan: string;
+  siteId: string;
+  onClose: () => void;
+  onSuccess: () => void;
+  onError: (msg: string) => void;
+}) {
+  const { targetPlan, siteId, onClose, onSuccess, onError } = props;
+  const [submitting, setSubmitting] = useState(false);
+  const planLabel = targetPlan.charAt(0).toUpperCase() + targetPlan.slice(1);
+  const price = PLAN_PRICES[targetPlan] ?? '0';
+  const benefits = PLAN_BENEFITS[targetPlan] ?? [];
+
+  const handleUpgrade = async () => {
+    if (!siteId) {
+      onError('사이트가 선택되지 않았습니다');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await workerFetch(`/sites/${siteId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ plan: targetPlan }),
+      });
+      onSuccess();
+    } catch (e: any) {
+      onError(e?.message ?? '알 수 없는 오류');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 relative">
+        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+          <X className="w-5 h-5" />
+        </button>
+
+        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center mb-4">
+          <Sparkles className="w-6 h-6 text-white" />
+        </div>
+
+        <h3 className="text-xl font-bold text-gray-900 mb-1">{planLabel} 플랜으로 업그레이드</h3>
+        <p className="text-sm text-gray-500 mb-5">월 {price}원 (정식 출시 후 자동결제)</p>
+
+        <ul className="space-y-2 mb-5">
+          {benefits.map((b) => (
+            <li key={b} className="flex items-start gap-2 text-sm text-gray-700">
+              <Check className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+              <span>{b}</span>
+            </li>
+          ))}
+        </ul>
+
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 mb-5">
+          <p className="text-xs font-semibold text-amber-900 mb-1">🎁 베타 서비스 안내</p>
+          <p className="text-xs text-amber-800 leading-relaxed">
+            현재 베타 서비스 기간으로 결제 없이 즉시 업그레이드됩니다. 정식 서비스 출시 후 자동결제가 시작됩니다.
+          </p>
+        </div>
+
+        <button
+          onClick={handleUpgrade}
+          disabled={submitting}
+          className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+        >
+          {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+          {submitting ? '업그레이드 중...' : '무료로 업그레이드 (베타)'}
+        </button>
+
+        <button
+          onClick={onClose}
+          className="block w-full text-center text-sm text-gray-400 hover:text-gray-600 mt-3 py-2"
+        >
+          나중에
+        </button>
+      </div>
     </div>
   );
 }
