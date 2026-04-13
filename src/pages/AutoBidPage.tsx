@@ -2518,25 +2518,23 @@ function GroupStrategyModal(props: {
         console.log('[GroupStrategy] apply responses (all groups):', applyResults);
       } else {
         // eslint-disable-next-line no-console
-        console.log('[GroupStrategy] apply called:', {
-          site_id: siteId,
-          campaign_id: campaignId,
-          group_id: groupId,
-          force: true,
-          target_rank: payload.target_rank,
-          max_bid: payload.max_bid,
-          min_bid: payload.min_bid,
-          device: payload.device,
-          lowest_bid: payload.lowest_bid,
-        });
+        console.log(
+          '[GroupStrategy] apply called - group_id:', groupId,
+          'site_id:', siteId,
+          'force:', true,
+          'target_rank:', targetRank,
+          'max_bid:', maxBid,
+        );
         const saveRes = await workerFetch('/naver/group-strategy', {
           method: 'POST',
           body: JSON.stringify(payload),
         });
         // eslint-disable-next-line no-console
         console.log('[GroupStrategy] save response:', saveRes);
-        const applyRes = await workerFetch('/naver/group-strategy/apply', {
+        const WORKER = import.meta.env.VITE_ADCONCENT_WORKER_URL;
+        const applyRes = await fetch(`${WORKER}/naver/group-strategy/apply`, {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             site_id: siteId,
             campaign_id: campaignId,
@@ -2544,8 +2542,15 @@ function GroupStrategyModal(props: {
             force: true,
           }),
         });
+        const applyData = await applyRes.json().catch(() => ({}));
         // eslint-disable-next-line no-console
-        console.log('[GroupStrategy] apply response:', applyRes);
+        console.log(
+          '[GroupStrategy] apply response - status:', applyRes.status,
+          'data:', JSON.stringify(applyData),
+        );
+        if (!applyRes.ok) {
+          throw new Error(applyData?.error || `apply 실패 (${applyRes.status})`);
+        }
       }
       onApplyToAll(keywordCount);
     } catch (e: any) {
