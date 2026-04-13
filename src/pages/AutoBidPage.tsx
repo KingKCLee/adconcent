@@ -205,7 +205,7 @@ export function AutoBidPage() {
     ncc_adgroup_id: k.ncc_adgroup_id ?? k.nccAdgroupId ?? k.adgroupId ?? k.group_id,
     campaign_id: k.campaign_id ?? k.nccCampaignId ?? k.campaignId ?? '',
     campaign_name: k.campaign_name ?? k.campaignName ?? '',
-    group_id: k.group_id ?? k.groupId ?? k.nccAdgroupId ?? k.adgroupId ?? '',
+    group_id: k.group_id ?? k.groupId ?? k.nccAdgroupId ?? k.adgroupId ?? k.adgroup_id ?? k.ncc_adgroup_id ?? '',
     group_name: k.group_name ?? k.groupName ?? k.adgroupName ?? k.nccAdgroupName ?? '',
   });
 
@@ -445,6 +445,7 @@ export function AutoBidPage() {
             k.group_id === filterGroup ||
             ka.nccAdgroupId === filterGroup ||
             ka.adgroupId === filterGroup ||
+            ka.adgroup_id === filterGroup ||
             k.ncc_adgroup_id === filterGroup
           );
         }
