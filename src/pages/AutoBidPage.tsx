@@ -178,6 +178,7 @@ export function AutoBidPage() {
   const [groupPanelOpen, setGroupPanelOpen] = useState(false);
   const [activeCampaign, setActiveCampaign] = useState<string>('');
   const [editingGroupKey, setEditingGroupKey] = useState<{ campaign_id: string; group_id: string; group_name: string } | null>(null);
+  const [showAllGroupsBulk, setShowAllGroupsBulk] = useState(false);
   const [filterCampaign, setFilterCampaign] = useState<string>('all');
   const [filterGroup, setFilterGroup] = useState<string>('all');
   const [filterDevice, setFilterDevice] = useState<Device | 'all'>('all');
@@ -690,6 +691,7 @@ export function AutoBidPage() {
           setActiveCampaign={setActiveCampaign}
           keywordCounts={keywordCountsByGroup}
           onEditGroup={(g) => setEditingGroupKey(g)}
+          onBulkAllGroups={() => setShowAllGroupsBulk(true)}
           isFree={isFree}
         />
       )}
@@ -797,6 +799,31 @@ export function AutoBidPage() {
             setEditingGroupKey(null);
             loadKeywords();
             showToast(`${n}개 키워드에 그룹 전략 적용 완료`);
+          }}
+        />
+      )}
+
+      {/* All-groups bulk modal */}
+      {showAllGroupsBulk && (
+        <GroupStrategyModal
+          siteId={siteId}
+          campaignId="*"
+          groupId="*"
+          groupName={`전체 그룹 (${campaignsGroups.reduce((acc, c) => acc + (c.groups?.length ?? 0), 0)}개)`}
+          keywordCount={keywords.length}
+          allGroupsMode
+          campaignsGroups={campaignsGroups}
+          onClose={() => setShowAllGroupsBulk(false)}
+          onSaved={() => {
+            setShowAllGroupsBulk(false);
+            loadGroupStrategies();
+            showToast('전체 그룹 전략 저장 완료');
+          }}
+          onApplyToAll={(n) => {
+            setShowAllGroupsBulk(false);
+            loadKeywords();
+            loadGroupStrategies();
+            showToast(`${n}개 키워드에 일괄 적용 완료`);
           }}
         />
       )}
@@ -1129,6 +1156,10 @@ function KeywordsTab(props: KeywordsTabProps) {
                 const checked = selectedIds.has(idStr);
                 const dev = (kw.device ?? 'ALL') as Device;
                 const lowestOn = !!kw.lowest_bid;
+                const groupKey = `${kw.campaign_id ?? ''}::${kw.group_id ?? ''}`;
+                const groupStrat = strategyByGroupKey.get(groupKey);
+                const sourceLabel = hasSetting ? '' : groupStrat ? '(그룹)' : '(기본)';
+                const sourceCls = hasSetting ? '' : groupStrat ? 'text-gray-500' : 'text-gray-300';
                 return (
                   <tr key={`${kw.keyword}-${i}`} className="border-b border-gray-50 hover:bg-gray-50">
                     <td className="px-3 py-3 text-center">
@@ -1243,9 +1274,16 @@ function KeywordsTab(props: KeywordsTabProps) {
                     })}
                     <td className="px-3 py-3 text-right text-gray-700">
                       {won(kw.current_bid)}
-                      {kw.target_rank != null && (
-                        <span className="block text-[10px] text-gray-400">목표 {kw.target_rank}위</span>
-                      )}
+                      {(() => {
+                        const effTarget = kw.target_rank ?? groupStrat?.target_rank ?? null;
+                        if (effTarget == null) return null;
+                        return (
+                          <span className="block text-[10px] text-gray-400">
+                            목표 {effTarget}위
+                            {sourceLabel && <span className={`ml-1 ${sourceCls}`}>{sourceLabel}</span>}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-3 text-center">
                       <span
@@ -2016,11 +2054,12 @@ function GroupStrategyPanel(props: {
   setActiveCampaign: (id: string) => void;
   keywordCounts: Map<string, number>;
   onEditGroup: (g: { campaign_id: string; group_id: string; group_name: string }) => void;
+  onBulkAllGroups: () => void;
   isFree: boolean;
 }) {
   const {
     open, onToggle, campaignsGroups, strategies, activeCampaign, setActiveCampaign,
-    keywordCounts, onEditGroup, isFree,
+    keywordCounts, onEditGroup, onBulkAllGroups, isFree,
   } = props;
 
   const stratMap = useMemo(() => {
@@ -2047,24 +2086,34 @@ function GroupStrategyPanel(props: {
 
       {open && (
         <div className="border-t border-gray-100">
-          <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center gap-2 flex-wrap">
-            {campaignsGroups.length === 0 ? (
-              <span className="text-xs text-gray-400">캠페인이 없습니다</span>
-            ) : (
-              campaignsGroups.map((c) => (
-                <button
-                  key={c.campaign_id}
-                  onClick={() => setActiveCampaign(c.campaign_id)}
-                  className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
-                    activeCampaign === c.campaign_id
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-gray-600 border border-gray-200 hover:border-blue-300'
-                  }`}
-                >
-                  {c.campaign_name}
-                </button>
-              ))
-            )}
+          <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              {campaignsGroups.length === 0 ? (
+                <span className="text-xs text-gray-400">캠페인이 없습니다</span>
+              ) : (
+                campaignsGroups.map((c) => (
+                  <button
+                    key={c.campaign_id}
+                    onClick={() => setActiveCampaign(c.campaign_id)}
+                    className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                      activeCampaign === c.campaign_id
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white text-gray-600 border border-gray-200 hover:border-blue-300'
+                    }`}
+                  >
+                    {c.campaign_name}
+                  </button>
+                ))
+              )}
+            </div>
+            <button
+              onClick={onBulkAllGroups}
+              disabled={isFree || campaignsGroups.length === 0}
+              className="text-xs px-3 py-1.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed shrink-0 flex items-center gap-1"
+            >
+              {isFree ? <Lock className="w-3 h-3" /> : <Settings2 className="w-3 h-3" />}
+              전체 그룹 일괄 설정
+            </button>
           </div>
 
           <div className="p-5">
@@ -2135,11 +2184,17 @@ function GroupStrategyModal(props: {
   groupName: string;
   existing?: GroupStrategy;
   keywordCount: number;
+  allGroupsMode?: boolean;
+  campaignsGroups?: CampaignGroup[];
   onClose: () => void;
   onSaved: () => void;
   onApplyToAll: (n: number) => void;
 }) {
-  const { siteId, campaignId, groupId, groupName, existing, keywordCount, onClose, onSaved, onApplyToAll } = props;
+  const {
+    siteId, campaignId, groupId, groupName, existing, keywordCount,
+    allGroupsMode, campaignsGroups,
+    onClose, onSaved, onApplyToAll,
+  } = props;
   const [targetRank, setTargetRank] = useState<number>(existing?.target_rank ?? 3);
   const [maxBid, setMaxBid] = useState<number>(existing?.max_bid ?? 3000);
   const [minBid, setMinBid] = useState<number>(existing?.min_bid ?? 70);
@@ -2162,14 +2217,36 @@ function GroupStrategyModal(props: {
     hourly_preset: hourlyPreset || null,
   });
 
+  const allGroupTargets = useMemo(() => {
+    if (!allGroupsMode || !campaignsGroups) return [];
+    const out: { campaign_id: string; group_id: string }[] = [];
+    for (const c of campaignsGroups) {
+      for (const g of c.groups ?? []) {
+        out.push({ campaign_id: c.campaign_id, group_id: g.group_id });
+      }
+    }
+    return out;
+  }, [allGroupsMode, campaignsGroups]);
+
   const handleSave = async () => {
     setError(null);
     setSaving(true);
     try {
-      await workerFetch('/naver/group-strategy', {
-        method: 'POST',
-        body: JSON.stringify(buildPayload()),
-      });
+      if (allGroupsMode) {
+        await Promise.allSettled(
+          allGroupTargets.map((t) =>
+            workerFetch('/naver/group-strategy', {
+              method: 'POST',
+              body: JSON.stringify({ ...buildPayload(), campaign_id: t.campaign_id, group_id: t.group_id }),
+            }),
+          ),
+        );
+      } else {
+        await workerFetch('/naver/group-strategy', {
+          method: 'POST',
+          body: JSON.stringify(buildPayload()),
+        });
+      }
       onSaved();
     } catch (e: any) {
       setError(e?.message ?? '저장 실패');
@@ -2179,22 +2256,48 @@ function GroupStrategyModal(props: {
   };
 
   const handleApplyToAll = async () => {
-    if (!confirm(`이 그룹의 ${keywordCount}개 키워드에 전략을 적용합니다. 계속하시겠습니까?`)) return;
+    const confirmMsg = allGroupsMode
+      ? `전체 ${allGroupTargets.length}개 그룹의 ${keywordCount}개 키워드에 전략을 적용합니다. 계속하시겠습니까?`
+      : `이 그룹의 ${keywordCount}개 키워드에 전략을 적용합니다. 계속하시겠습니까?`;
+    if (!confirm(confirmMsg)) return;
     setError(null);
     setApplying(true);
     try {
-      await workerFetch('/naver/group-strategy', {
-        method: 'POST',
-        body: JSON.stringify(buildPayload()),
-      });
-      await workerFetch('/naver/group-strategy/apply', {
-        method: 'POST',
-        body: JSON.stringify({
-          site_id: siteId,
-          campaign_id: campaignId,
-          group_id: groupId,
-        }),
-      });
+      if (allGroupsMode) {
+        await Promise.allSettled(
+          allGroupTargets.map((t) =>
+            workerFetch('/naver/group-strategy', {
+              method: 'POST',
+              body: JSON.stringify({ ...buildPayload(), campaign_id: t.campaign_id, group_id: t.group_id }),
+            }),
+          ),
+        );
+        await Promise.allSettled(
+          allGroupTargets.map((t) =>
+            workerFetch('/naver/group-strategy/apply', {
+              method: 'POST',
+              body: JSON.stringify({
+                site_id: siteId,
+                campaign_id: t.campaign_id,
+                group_id: t.group_id,
+              }),
+            }),
+          ),
+        );
+      } else {
+        await workerFetch('/naver/group-strategy', {
+          method: 'POST',
+          body: JSON.stringify(buildPayload()),
+        });
+        await workerFetch('/naver/group-strategy/apply', {
+          method: 'POST',
+          body: JSON.stringify({
+            site_id: siteId,
+            campaign_id: campaignId,
+            group_id: groupId,
+          }),
+        });
+      }
       onApplyToAll(keywordCount);
     } catch (e: any) {
       setError(e?.message ?? '적용 실패');
