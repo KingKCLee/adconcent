@@ -80,7 +80,7 @@ function getStatus(kw: KeywordStat): { label: string; cls: string } {
 
 export function AutoBidPage() {
   const { siteId } = useSite();
-  const { isFree } = usePlan();
+  const { isFree, isLoading: planLoading } = usePlan();
   const [tab, setTab] = useState<Tab>('keywords');
   const [showUpgrade, setShowUpgrade] = useState(false);
 
@@ -271,6 +271,18 @@ export function AutoBidPage() {
     }
     return { count: todays.length, saved, raised };
   }, [logs]);
+
+  if (planLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="h-10 bg-gray-100 rounded animate-pulse" />
+        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-sm text-gray-400">
+          <Loader2 className="w-6 h-6 animate-spin mx-auto mb-3" />
+          플랜 정보 확인 중...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
