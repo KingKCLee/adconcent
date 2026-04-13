@@ -199,14 +199,15 @@ export function AutoBidPage() {
 
   const normalizeKeyword = (k: any): KeywordStat => ({
     ...k,
-    keyword: k.keyword ?? k.keyword_name ?? '',
-    keyword_id: k.keyword_id ?? k.nccKeywordId ?? k.id,
-    ncc_keyword_id: k.ncc_keyword_id ?? k.nccKeywordId ?? k.keyword_id,
-    ncc_adgroup_id: k.ncc_adgroup_id ?? k.nccAdgroupId ?? k.adgroupId ?? k.group_id,
-    campaign_id: k.campaign_id ?? k.nccCampaignId ?? k.campaignId ?? '',
-    campaign_name: k.campaign_name ?? k.campaignName ?? '',
-    group_id: k.group_id ?? k.groupId ?? k.nccAdgroupId ?? k.adgroupId ?? k.adgroup_id ?? k.ncc_adgroup_id ?? '',
-    group_name: k.group_name ?? k.groupName ?? k.adgroupName ?? k.nccAdgroupName ?? '',
+    keyword: k.keyword || k.keyword_name || '',
+    keyword_id: k.ncc_keyword_id || k.keyword_id || k.nccKeywordId || k.id,
+    ncc_keyword_id: k.ncc_keyword_id || k.nccKeywordId || k.keyword_id,
+    ncc_adgroup_id: k.ncc_adgroup_id || k.nccAdgroupId || k.adgroupId || k.adgroup_id || k.group_id || '',
+    campaign_id: k.ncc_campaign_id || k.campaign_id || k.nccCampaignId || k.campaignId || '',
+    campaign_name: k.campaign_name || k.campaignName || '',
+    // 핵심: keyword-stats 응답 필드는 ncc_adgroup_id (snake_case)
+    group_id: k.ncc_adgroup_id || k.group_id || k.groupId || k.nccAdgroupId || k.adgroupId || k.adgroup_id || '',
+    group_name: k.group_name || k.groupName || k.adgroupName || k.nccAdgroupName || '',
   });
 
   const loadKeywords = async () => {
@@ -439,21 +440,8 @@ export function AutoBidPage() {
         }),
       });
       const matchedCount = keywords.filter((k) => {
-        const ka = k as any;
-        if (filterGroup !== 'all') {
-          return (
-            k.group_id === filterGroup ||
-            ka.nccAdgroupId === filterGroup ||
-            ka.adgroupId === filterGroup ||
-            ka.adgroup_id === filterGroup ||
-            k.ncc_adgroup_id === filterGroup
-          );
-        }
-        return (
-          k.campaign_id === filterCampaign ||
-          ka.nccCampaignId === filterCampaign ||
-          ka.campaignId === filterCampaign
-        );
+        if (filterGroup !== 'all') return k.group_id === filterGroup;
+        return k.campaign_id === filterCampaign;
       }).length;
       showToast(`${scopeName}의 ${matchedCount}개 키워드를 등록했습니다`);
       loadKeywords();
@@ -543,24 +531,8 @@ export function AutoBidPage() {
 
   const filteredKeywords = useMemo(() => {
     return keywords.filter((k) => {
-      if (filterCampaign !== 'all') {
-        const ka = k as any;
-        const campaignMatch =
-          k.campaign_id === filterCampaign ||
-          ka.nccCampaignId === filterCampaign ||
-          ka.campaignId === filterCampaign;
-        if (!campaignMatch) return false;
-      }
-      if (filterGroup !== 'all') {
-        const ka = k as any;
-        const groupMatch =
-          k.group_id === filterGroup ||
-          ka.nccAdgroupId === filterGroup ||
-          ka.adgroupId === filterGroup ||
-          ka.adgroup_id === filterGroup ||
-          k.ncc_adgroup_id === filterGroup;
-        if (!groupMatch) return false;
-      }
+      if (filterCampaign !== 'all' && k.campaign_id !== filterCampaign) return false;
+      if (filterGroup !== 'all' && k.group_id !== filterGroup) return false;
       if (filterDevice !== 'all') {
         const dev = (k.device ?? 'ALL') as Device;
         if (filterDevice === 'PC' && dev === 'M') return false;
