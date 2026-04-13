@@ -41,8 +41,8 @@ interface GroupStrategy {
   max_bid: number;
   min_bid: number;
   device: Device;
-  lowest_bid: number;
-  hourly_preset?: 'peak' | 'night' | 'all3' | null;
+  use_lowest_bid: number;
+  time_strategy?: 'peak' | 'night' | 'all3' | '' | null;
 }
 
 type Tab = 'keywords' | 'logs';
@@ -69,8 +69,8 @@ interface KeywordStat {
   is_active?: number;
   strategy?: string;
   device?: Device;
-  lowest_bid?: number;
-  lowest_bid_wait_min?: number;
+  use_lowest_bid?: number;
+  lowest_bid_wait?: number;
   ad_status?: string;
   user_locked?: number;
   hourly_schedule?: HourSchedule | string;
@@ -86,7 +86,7 @@ interface BidLog {
   id: number;
   created_at: string;
   keyword: string;
-  prev_bid: number;
+  old_bid: number;
   new_bid: number;
   current_rank: number | null;
   target_rank: number | null;
@@ -735,14 +735,14 @@ export function AutoBidPage() {
       return;
     }
     if (!kw.bid_setting_id) return;
-    const next = kw.lowest_bid ? 0 : 1;
+    const next = kw.use_lowest_bid ? 0 : 1;
     setKeywords((prev) =>
-      prev.map((k) => (k.bid_setting_id === kw.bid_setting_id ? { ...k, lowest_bid: next } : k)),
+      prev.map((k) => (k.bid_setting_id === kw.bid_setting_id ? { ...k, use_lowest_bid: next } : k)),
     );
     try {
       await workerFetch(`/naver/bid-settings/${kw.bid_setting_id}`, {
         method: 'PUT',
-        body: JSON.stringify({ lowest_bid: next }),
+        body: JSON.stringify({ use_lowest_bid: next }),
       });
     } catch {
       showToast('최저가 입찰 변경 실패');
@@ -756,7 +756,7 @@ export function AutoBidPage() {
     let saved = 0;
     let raised = 0;
     for (const l of todays) {
-      const d = (l.new_bid ?? 0) - (l.prev_bid ?? 0);
+      const d = (l.new_bid ?? 0) - (l.old_bid ?? 0);
       if (d > 0) raised += d;
       else if (d < 0) saved += -d;
     }
@@ -1399,7 +1399,7 @@ function KeywordsTab(props: KeywordsTabProps) {
                 const idStr = String(kw.bid_setting_id ?? '');
                 const checked = selectedIds.has(idStr);
                 const dev = (kw.device ?? 'ALL') as Device;
-                const lowestOn = !!kw.lowest_bid;
+                const lowestOn = !!kw.use_lowest_bid;
                 // 그룹 전략 매칭: 키워드와 group_id가 정확히 일치할 때만 상속
                 const hasGroupId = !!(kw.group_id && kw.group_id !== '*');
                 const groupKey = hasGroupId ? `${kw.campaign_id ?? ''}::${kw.group_id}` : '';
@@ -1654,7 +1654,7 @@ function LogsTab(props: {
     return logs.filter((l) => {
       if (logDate && (l.created_at ?? '').slice(0, 10) !== logDate) return false;
       if (logDirection !== 'all') {
-        const d = (l.new_bid ?? 0) - (l.prev_bid ?? 0);
+        const d = (l.new_bid ?? 0) - (l.old_bid ?? 0);
         if (logDirection === 'up' && d <= 0) return false;
         if (logDirection === 'down' && d >= 0) return false;
       }
@@ -1678,9 +1678,9 @@ function LogsTab(props: {
     const rows = filteredAllLogs.map((l) => [
       (l.created_at ?? '').replace('T', ' ').slice(0, 19),
       l.keyword,
-      String(l.prev_bid ?? 0),
+      String(l.old_bid ?? 0),
       String(l.new_bid ?? 0),
-      String((l.new_bid ?? 0) - (l.prev_bid ?? 0)),
+      String((l.new_bid ?? 0) - (l.old_bid ?? 0)),
       String(l.current_rank ?? ''),
       String(l.target_rank ?? ''),
       l.strategy ?? '',
@@ -1779,7 +1779,7 @@ function LogsTab(props: {
               </thead>
               <tbody>
                 {visibleLogs.map((l) => {
-                  const delta = (l.new_bid ?? 0) - (l.prev_bid ?? 0);
+                  const delta = (l.new_bid ?? 0) - (l.old_bid ?? 0);
                   const up = delta > 0;
                   const down = delta < 0;
                   return (
@@ -1788,7 +1788,7 @@ function LogsTab(props: {
                         {(l.created_at ?? '').replace('T', ' ').slice(0, 16)}
                       </td>
                       <td className="px-3 py-3 font-medium text-gray-800">{l.keyword}</td>
-                      <td className="px-3 py-3 text-right text-gray-600">{won(l.prev_bid)}</td>
+                      <td className="px-3 py-3 text-right text-gray-600">{won(l.old_bid)}</td>
                       <td className="px-3 py-3 text-right text-gray-900 font-semibold">{won(l.new_bid)}</td>
                       <td
                         className={`px-3 py-3 text-right font-semibold ${
@@ -1812,7 +1812,7 @@ function LogsTab(props: {
                         {(l.created_at ?? '').replace('T', ' ').slice(0, 16)}
                       </td>
                       <td className="px-3 py-3 font-medium text-gray-800">{l.keyword}</td>
-                      <td className="px-3 py-3 text-right text-gray-600">{won(l.prev_bid)}</td>
+                      <td className="px-3 py-3 text-right text-gray-600">{won(l.old_bid)}</td>
                       <td className="px-3 py-3 text-right text-gray-900 font-semibold">{won(l.new_bid)}</td>
                       <td className="px-3 py-3 text-right text-gray-500">-</td>
                       <td className="px-3 py-3 text-center text-xs text-gray-500">-</td>
@@ -1862,8 +1862,8 @@ function KeywordFormModal(props: {
   const [minBid, setMinBid] = useState<number>(initial?.min_bid ?? 70);
   const [strategy, setStrategy] = useState<string>(initial?.strategy ?? 'target_rank');
   const [device, setDevice] = useState<Device>((initial?.device as Device) ?? 'ALL');
-  const [lowestBid, setLowestBid] = useState<boolean>(!!initial?.lowest_bid);
-  const [lowestBidWaitMin, setLowestBidWaitMin] = useState<number>(initial?.lowest_bid_wait_min ?? 10);
+  const [lowestBid, setLowestBid] = useState<boolean>(!!initial?.use_lowest_bid);
+  const [lowestBidWaitMin, setLowestBidWaitMin] = useState<number>(initial?.lowest_bid_wait ?? 10);
 
   const initialSchedule = (() => {
     const raw = initial?.hourly_schedule;
@@ -1904,8 +1904,8 @@ function KeywordFormModal(props: {
         min_bid: minBid,
         strategy,
         device,
-        lowest_bid: lowestBid ? 1 : 0,
-        lowest_bid_wait_min: lowestBidWaitMin,
+        use_lowest_bid: lowestBid ? 1 : 0,
+        lowest_bid_wait: lowestBidWaitMin,
         hourly_schedule: JSON.stringify(schedule),
       };
       if (mode === 'edit' && initial?.bid_setting_id) {
@@ -2165,7 +2165,7 @@ interface BulkChanges {
   target_rank?: number;
   max_bid?: number;
   device?: Device;
-  lowest_bid?: number;
+  use_lowest_bid?: number;
 }
 
 function BulkSettingsModal(props: {
@@ -2189,7 +2189,7 @@ function BulkSettingsModal(props: {
     if (useTargetRank) changes.target_rank = targetRank;
     if (useMaxBid) changes.max_bid = maxBid;
     if (useDevice) changes.device = device;
-    if (useLowestBid) changes.lowest_bid = lowestBid ? 1 : 0;
+    if (useLowestBid) changes.use_lowest_bid = lowestBid ? 1 : 0;
     if (Object.keys(changes).length === 0) return;
     onApply(changes);
   };
@@ -2496,8 +2496,8 @@ function GroupStrategyPanel(props: {
                               {strat.device === 'ALL' ? '전체' : strat.device === 'PC' ? 'PC' : '모바일'}
                             </span>{' '}
                             · 최저가입찰:{' '}
-                            <span className={`font-semibold ${strat.lowest_bid ? 'text-green-600' : 'text-gray-400'}`}>
-                              {strat.lowest_bid ? 'ON' : 'OFF'}
+                            <span className={`font-semibold ${strat.use_lowest_bid ? 'text-green-600' : 'text-gray-400'}`}>
+                              {strat.use_lowest_bid ? 'ON' : 'OFF'}
                             </span>
                           </p>
                         </div>
@@ -2541,8 +2541,10 @@ function GroupStrategyModal(props: {
   const [maxBid, setMaxBid] = useState<number>(existing?.max_bid ?? 3000);
   const [minBid, setMinBid] = useState<number>(existing?.min_bid ?? 70);
   const [device, setDevice] = useState<Device>(existing?.device ?? 'ALL');
-  const [lowestBid, setLowestBid] = useState<boolean>(!!existing?.lowest_bid);
-  const [hourlyPreset, setHourlyPreset] = useState<'peak' | 'night' | 'all3' | ''>(existing?.hourly_preset ?? '');
+  const [lowestBid, setLowestBid] = useState<boolean>(!!existing?.use_lowest_bid);
+  const [hourlyPreset, setHourlyPreset] = useState<'peak' | 'night' | 'all3' | ''>(
+    ((existing?.time_strategy as 'peak' | 'night' | 'all3' | '' | null) ?? '') || '',
+  );
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2555,8 +2557,8 @@ function GroupStrategyModal(props: {
     max_bid: maxBid,
     min_bid: minBid,
     device,
-    lowest_bid: lowestBid ? 1 : 0,
-    hourly_preset: hourlyPreset || null,
+    use_lowest_bid: lowestBid ? 1 : 0,
+    time_strategy: hourlyPreset || '',
   });
 
   const allGroupTargets = useMemo(() => {

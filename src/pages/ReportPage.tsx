@@ -12,28 +12,25 @@ interface WeeklyResult {
   recommend: string[];
 }
 
-interface ReportTotals {
-  cost?: number;
-  clicks?: number;
+interface AdPerformance {
+  total_cost?: number;
+  total_clicks?: number;
+  avg_cpc?: number;
   impressions?: number;
-  conversions?: number;
-  ctr?: number;
-  cpc?: number;
-  roas?: number;
 }
 
-interface KeywordPerf {
-  keyword: string;
-  cost?: number;
-  clicks?: number;
-  ctr?: number;
-  cpc?: number;
-  conversions?: number;
+interface BidOptimization {
+  total_changes?: number;
+  up_count?: number;
+  down_count?: number;
+  saved_amount?: number;
+  top_keywords?: { keyword: string; changes?: number; saved?: number }[];
 }
 
 interface ReportSummary {
-  totals?: ReportTotals;
-  top_keywords?: KeywordPerf[];
+  period?: { since: string; until: string };
+  ad_performance?: AdPerformance;
+  bid_optimization?: BidOptimization;
 }
 
 type Period = 'this_week' | 'last_week' | 'this_month' | 'custom';
@@ -93,57 +90,10 @@ export function ReportPage() {
     setLoading(true);
     setError('');
     try {
-      // 1순위: /reports/summary 시도
-      let s: ReportSummary | null = null;
-      try {
-        const r = await workerFetch<{ data?: ReportSummary } | ReportSummary>(
-          `/reports/summary?site_id=${siteId}&since=${dates.since}&until=${dates.until}`,
-        );
-        s = (r as any)?.data ?? (r as any);
-      } catch {
-        // 폴백: /naver/stats + /naver/keyword-stats 합산
-        const [statsR, kwR] = await Promise.allSettled([
-          workerFetch<any>('/naver/stats', {
-            method: 'POST',
-            body: JSON.stringify({
-              site_id: siteId,
-              ids: [],
-              timeRange: { since: dates.since, until: dates.until },
-              fields: ['clkCnt', 'impCnt', 'salesAmt', 'crto'],
-              idType: 'campaign',
-              timeUnit: 'day',
-            }),
-          }),
-          workerFetch<any>(`/naver/keyword-stats?site_id=${siteId}&offset=0&limit=10`),
-        ]);
-        const totals = statsR.status === 'fulfilled' ? statsR.value?.totals : null;
-        const kwData =
-          kwR.status === 'fulfilled'
-            ? Array.isArray(kwR.value)
-              ? kwR.value
-              : (kwR.value?.data ?? kwR.value?.keywords ?? [])
-            : [];
-        s = {
-          totals: totals
-            ? {
-                cost: totals.salesAmt,
-                clicks: totals.clkCnt,
-                impressions: totals.impCnt,
-                conversions: Math.round(totals.crto ?? 0),
-                ctr: totals.impCnt > 0 ? (totals.clkCnt / totals.impCnt) * 100 : 0,
-                cpc: totals.clkCnt > 0 ? Math.round(totals.salesAmt / totals.clkCnt) : 0,
-              }
-            : undefined,
-          top_keywords: kwData.slice(0, 5).map((k: any) => ({
-            keyword: k.keyword,
-            cost: k.salesAmt ?? k.cost,
-            clicks: k.clkCnt ?? k.clicks,
-            ctr: k.ctr,
-            cpc: k.cpc,
-            conversions: k.conversions,
-          })),
-        };
-      }
+      const r = await workerFetch<{ data?: ReportSummary } | ReportSummary>(
+        `/reports/summary?site_id=${siteId}&since=${dates.since}&until=${dates.until}`,
+      );
+      const s = ((r as any)?.data ?? r) as ReportSummary;
       setSummary(s);
     } catch (e) {
       setError((e as Error).message);
@@ -166,7 +116,7 @@ export function ReportPage() {
     setAiLoading(true);
     setError('');
     try {
-      const t = summary?.totals ?? {};
+      const ad = summary?.ad_performance ?? {};
       const res = await workerFetch<{ data: WeeklyResult }>('/ai', {
         method: 'POST',
         body: JSON.stringify({
@@ -175,10 +125,10 @@ export function ReportPage() {
             site_id: siteId,
             period: { since: dates.since, until: dates.until },
             thisWeek: {
-              imp: t.impressions ?? 0,
-              clk: t.clicks ?? 0,
-              cost: t.cost ?? 0,
-              conv: t.conversions ?? 0,
+              imp: ad.impressions ?? 0,
+              clk: ad.total_clicks ?? 0,
+              cost: ad.total_cost ?? 0,
+              conv: 0,
             },
           },
         }),
@@ -203,14 +153,15 @@ export function ReportPage() {
     }, 1500);
   };
 
-  const totals = summary?.totals ?? {};
-  const topKeywords = summary?.top_keywords ?? [];
+  const ad = summary?.ad_performance ?? {};
+  const bidOpt = summary?.bid_optimization ?? {};
+  const topKeywords = bidOpt.top_keywords ?? [];
 
   const kpis = [
-    { label: '총 광고비', icon: CircleDollarSign, color: 'text-blue-600', bg: 'bg-blue-50', value: won(totals.cost) },
-    { label: '총 클릭', icon: MousePointerClick, color: 'text-emerald-600', bg: 'bg-emerald-50', value: num(totals.clicks) },
-    { label: '전환수', icon: Target, color: 'text-violet-600', bg: 'bg-violet-50', value: num(totals.conversions) },
-    { label: '평균 CPC', icon: TrendingUp, color: 'text-orange-600', bg: 'bg-orange-50', value: won(totals.cpc) },
+    { label: '총 광고비', icon: CircleDollarSign, color: 'text-blue-600', bg: 'bg-blue-50', value: won(ad.total_cost) },
+    { label: '총 클릭', icon: MousePointerClick, color: 'text-emerald-600', bg: 'bg-emerald-50', value: num(ad.total_clicks) },
+    { label: '노출수', icon: Target, color: 'text-violet-600', bg: 'bg-violet-50', value: num(ad.impressions) },
+    { label: '평균 CPC', icon: TrendingUp, color: 'text-orange-600', bg: 'bg-orange-50', value: won(ad.avg_cpc) },
   ];
 
   return (
@@ -302,10 +253,33 @@ export function ReportPage() {
         ))}
       </div>
 
-      {/* TOP 5 keywords */}
+      {/* 자동입찰 성과 요약 */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <h3 className="font-semibold text-gray-900 mb-4">자동입찰 성과 요약</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="text-center">
+            <p className="text-xs text-gray-500 mb-1">총 조정 건수</p>
+            <p className="text-xl font-bold text-gray-900">{num(bidOpt.total_changes)}건</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-gray-500 mb-1">상향</p>
+            <p className="text-xl font-bold text-red-600">▲ {num(bidOpt.up_count)}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-gray-500 mb-1">하향</p>
+            <p className="text-xl font-bold text-green-600">▼ {num(bidOpt.down_count)}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-gray-500 mb-1">절감액</p>
+            <p className="text-xl font-bold text-blue-700">{won(bidOpt.saved_amount)}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* TOP 5 keywords (절감액 기준) */}
       <div className="bg-white rounded-xl border border-gray-200">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-semibold text-gray-900">키워드 TOP 5</h3>
+          <h3 className="font-semibold text-gray-900">절감액 TOP 5 키워드</h3>
         </div>
         {loading ? (
           <div className="p-8 text-center text-sm text-gray-400">
@@ -319,24 +293,16 @@ export function ReportPage() {
               <thead>
                 <tr className="text-left text-xs text-gray-400 border-b border-gray-100 bg-gray-50">
                   <th className="px-4 py-3 font-medium">키워드</th>
-                  <th className="px-3 py-3 font-medium text-right">광고비</th>
-                  <th className="px-3 py-3 font-medium text-right">클릭</th>
-                  <th className="px-3 py-3 font-medium text-right">CTR</th>
-                  <th className="px-3 py-3 font-medium text-right">CPC</th>
-                  <th className="px-3 py-3 font-medium text-right">전환</th>
+                  <th className="px-3 py-3 font-medium text-right">조정 횟수</th>
+                  <th className="px-3 py-3 font-medium text-right">절감액</th>
                 </tr>
               </thead>
               <tbody>
                 {topKeywords.map((k, i) => (
                   <tr key={`${k.keyword}-${i}`} className="border-b border-gray-50 hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium text-gray-800">{k.keyword}</td>
-                    <td className="px-3 py-3 text-right text-gray-900 font-semibold">{won(k.cost)}</td>
-                    <td className="px-3 py-3 text-right text-gray-700">{num(k.clicks)}</td>
-                    <td className="px-3 py-3 text-right text-gray-700">
-                      {k.ctr != null ? `${k.ctr.toFixed(2)}%` : '-'}
-                    </td>
-                    <td className="px-3 py-3 text-right text-gray-700">{k.cpc ? won(k.cpc) : '-'}</td>
-                    <td className="px-3 py-3 text-right text-gray-700">{num(k.conversions)}</td>
+                    <td className="px-3 py-3 text-right text-gray-700">{num(k.changes)}회</td>
+                    <td className="px-3 py-3 text-right text-blue-700 font-semibold">{won(k.saved)}</td>
                   </tr>
                 ))}
               </tbody>

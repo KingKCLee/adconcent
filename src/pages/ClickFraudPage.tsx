@@ -13,7 +13,7 @@ import { UpgradePrompt } from '@/components/ui/UpgradePrompt';
 import { usePlan } from '@/hooks/usePlan';
 import { useSite } from '@/contexts/SiteContext';
 
-type Period = 'yesterday' | '7d' | 'this_month' | 'custom';
+type Period = 'today' | '7d' | '30d';
 
 interface HourBucket {
   hour: number;
@@ -61,6 +61,19 @@ interface NaverStatsResponse {
   totals?: { impCnt: number; clkCnt: number; salesAmt: number; crto?: number };
 }
 
+interface FraudSettings {
+  threshold_count?: number;
+  threshold_minutes?: number;
+  night_mode?: number;
+  night_threshold_count?: number;
+  block_vpn?: number;
+}
+
+interface PixelStatus {
+  ips: unknown[];
+  totalClicks: number;
+}
+
 const WORKER_URL = import.meta.env.VITE_ADCONCENT_WORKER_URL;
 const FALLBACK_AVG_CPC = 800;
 
@@ -91,24 +104,20 @@ function buildPixelSnippet(siteId: string) {
 </script>`;
 }
 
-function rangeFor(p: Period, custom?: { since: string; until: string }) {
+function rangeFor(p: Period) {
   const today = new Date();
-  if (p === 'yesterday') {
-    const y = new Date(today);
-    y.setDate(today.getDate() - 1);
-    const ys = fmtDate(y);
-    return { since: ys, until: ys };
+  if (p === 'today') {
+    return { since: fmtDate(today), until: fmtDate(today) };
   }
   if (p === '7d') {
     const s = new Date(today);
     s.setDate(today.getDate() - 6);
     return { since: fmtDate(s), until: fmtDate(today) };
   }
-  if (p === 'this_month') {
-    const first = new Date(today.getFullYear(), today.getMonth(), 1);
-    return { since: fmtDate(first), until: fmtDate(today) };
-  }
-  return custom ?? { since: fmtDate(today), until: fmtDate(today) };
+  // 30d
+  const s = new Date(today);
+  s.setDate(today.getDate() - 29);
+  return { since: fmtDate(s), until: fmtDate(today) };
 }
 
 export function ClickFraudPage() {
@@ -118,10 +127,10 @@ export function ClickFraudPage() {
   const PIXEL_SNIPPET = buildPixelSnippet(siteId);
 
   const [period, setPeriod] = useState<Period>('7d');
-  const [customSince, setCustomSince] = useState(fmtDate(new Date()));
-  const [customUntil, setCustomUntil] = useState(fmtDate(new Date()));
   const [detail, setDetail] = useState<StatsDetailResponse | null>(null);
   const [naverTotals, setNaverTotals] = useState<{ clicks: number; cost: number; impressions: number; conversions: number } | null>(null);
+  const [fraudSettings, setFraudSettings] = useState<FraudSettings | null>(null);
+  const [pixelStatus, setPixelStatus] = useState<PixelStatus | null>(null);
   const [avgCpc, setAvgCpc] = useState<number>(FALLBACK_AVG_CPC);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -129,18 +138,13 @@ export function ClickFraudPage() {
   const [blockedThisMonth, setBlockedThisMonth] = useState(0);
   const [showUpgrade, setShowUpgrade] = useState(false);
 
-  const dates = useMemo(
-    () => rangeFor(period, { since: customSince, until: customUntil }),
-    [period, customSince, customUntil],
-  );
+  const dates = useMemo(() => rangeFor(period), [period]);
 
   const loadStats = () => {
     if (!siteId) return;
     setLoading(true);
     Promise.allSettled([
-      workerFetch<StatsDetailResponse>(
-        `/stats/detail?site_id=${siteId}&since=${dates.since}&until=${dates.until}`,
-      ),
+      workerFetch<StatsDetailResponse>(`/stats/detail?site_id=${siteId}&period=${period}`),
       workerFetch<NaverStatsResponse>('/naver/stats', {
         method: 'POST',
         body: JSON.stringify({
@@ -178,7 +182,26 @@ export function ClickFraudPage() {
   useEffect(() => {
     loadStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [siteId, dates.since, dates.until]);
+  }, [siteId, period]);
+
+  // fraud_settings + 픽셀 수집 상태 (한 번만)
+  useEffect(() => {
+    if (!siteId) return;
+    Promise.allSettled([
+      workerFetch<{ data?: FraudSettings; exists?: boolean }>(`/fraud-settings?site_id=${siteId}`),
+      workerFetch<{ ips?: unknown[]; summary?: { totalClicks?: number } }>(`/stats?site_id=${siteId}`),
+    ]).then(([fsR, pxR]) => {
+      if (fsR.status === 'fulfilled' && fsR.value?.data) {
+        setFraudSettings(fsR.value.data);
+      }
+      if (pxR.status === 'fulfilled') {
+        setPixelStatus({
+          ips: pxR.value?.ips ?? [],
+          totalClicks: pxR.value?.summary?.totalClicks ?? 0,
+        });
+      }
+    });
+  }, [siteId]);
 
   const totals = useMemo(() => {
     const t = detail?.totals ?? {};
@@ -210,10 +233,9 @@ export function ClickFraudPage() {
   const unblockedSuspicious = totals.suspicious;
 
   const periodLabel =
-    period === 'yesterday' ? '어제' :
+    period === 'today' ? '오늘' :
     period === '7d' ? '최근 7일' :
-    period === 'this_month' ? '이번달' :
-    `${dates.since} ~ ${dates.until}`;
+    '최근 30일';
 
   // 네이버 데이터 우선, 없으면 픽셀 totals.totalClicks 폴백
   const displayClicks = naverTotals?.clicks ?? totals.totalClicks;
@@ -297,10 +319,9 @@ export function ClickFraudPage() {
         <span className="text-xs text-gray-500 mr-2">기간:</span>
         {(
           [
-            { id: 'yesterday', label: '어제' },
+            { id: 'today', label: '오늘' },
             { id: '7d', label: '7일' },
-            { id: 'this_month', label: '이번달' },
-            { id: 'custom', label: '직접입력' },
+            { id: '30d', label: '30일' },
           ] as { id: Period; label: string }[]
         ).map((p) => (
           <button
@@ -313,27 +334,75 @@ export function ClickFraudPage() {
             {p.label}
           </button>
         ))}
-        {period === 'custom' && (
-          <>
-            <input
-              type="date"
-              value={customSince}
-              onChange={(e) => setCustomSince(e.target.value)}
-              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <span className="text-xs text-gray-400">~</span>
-            <input
-              type="date"
-              value={customUntil}
-              onChange={(e) => setCustomUntil(e.target.value)}
-              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </>
-        )}
         <span className="text-xs text-gray-400 ml-2">{dates.since} ~ {dates.until}</span>
         <button onClick={loadStats} className="ml-auto text-xs text-blue-600 hover:underline">
           새로고침
         </button>
+      </div>
+
+      {/* 픽셀 상태 + 자동 차단 규칙 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* 픽셀 상태 */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-start gap-3">
+          <div className={`w-10 h-10 rounded-lg shrink-0 flex items-center justify-center ${
+            pixelStatus && pixelStatus.totalClicks > 0 ? 'bg-green-50' : 'bg-red-50'
+          }`}>
+            <Shield className={`w-5 h-5 ${
+              pixelStatus && pixelStatus.totalClicks > 0 ? 'text-green-600' : 'text-red-600'
+            }`} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="font-semibold text-gray-900 text-sm">픽셀 설치 상태</h3>
+              {pixelStatus && pixelStatus.totalClicks > 0 ? (
+                <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                  🟢 수집 중
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                  🔴 미설치
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-500">
+              {pixelStatus && pixelStatus.totalClicks > 0
+                ? `누적 클릭 ${pixelStatus.totalClicks.toLocaleString()}건 · IP별 분석 활성`
+                : '픽셀 코드를 설치하면 IP별 클릭 패턴 분석이 가능합니다'}
+            </p>
+          </div>
+        </div>
+
+        {/* 자동 차단 규칙 */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-start gap-3">
+          <div className="w-10 h-10 rounded-lg shrink-0 bg-amber-50 flex items-center justify-center">
+            <ShieldCheck className="w-5 h-5 text-amber-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-gray-900 text-sm mb-1">자동 차단 규칙</h3>
+            {fraudSettings ? (
+              <p className="text-xs text-gray-500">
+                <span className="font-medium text-gray-700">
+                  {fraudSettings.threshold_minutes}분 내 {fraudSettings.threshold_count}회
+                </span>{' '}
+                초과 시 자동 차단
+                {fraudSettings.night_mode ? (
+                  <>
+                    {' · '}
+                    <span className="text-violet-600">야간 강화({fraudSettings.night_threshold_count}회)</span>
+                  </>
+                ) : null}
+                {fraudSettings.block_vpn ? (
+                  <>
+                    {' · '}
+                    <span className="text-blue-600">VPN 차단</span>
+                  </>
+                ) : null}
+              </p>
+            ) : (
+              <p className="text-xs text-gray-400">규칙 로드 중...</p>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Free 플랜 경고 */}

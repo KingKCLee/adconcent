@@ -20,7 +20,7 @@ interface BidLog {
   id: number;
   created_at: string;
   keyword: string;
-  prev_bid: number;
+  old_bid: number;
   new_bid: number;
   current_rank: number | null;
   target_rank: number | null;
@@ -85,6 +85,7 @@ export function DashboardPage() {
   const [dismissedSugs, setDismissedSugs] = useState<string[]>([]);
   const [aiSuggestions, setAiSuggestions] = useState<AiSuggestion[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiFallback, setAiFallback] = useState(false);
 
   useEffect(() => {
     if (!siteId) return;
@@ -131,24 +132,33 @@ export function DashboardPage() {
     if (!siteId || keywords.length === 0) return;
     setAiLoading(true);
     const timer = setTimeout(() => {
-      workerFetch<{ data?: { suggestions?: AiSuggestion[]; actions?: { text: string; level: string }[] } }>(
-        '/ai',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            action: 'briefing',
-            data: {
-              keywords: keywords.slice(0, 10).map((k) => ({
-                keyword: k.keyword,
-                current_rank: k.current_rank,
-                current_bid: k.current_bid,
-                target_rank: k.target_rank,
-              })),
-            },
-          }),
-        },
-      )
+      workerFetch<{
+        data?: {
+          suggestions?: AiSuggestion[];
+          actions?: { text: string; level: string }[];
+        };
+        warning?: string;
+      }>('/ai', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'briefing',
+          data: {
+            keywords: keywords.slice(0, 10).map((k) => ({
+              keyword: k.keyword,
+              current_rank: k.current_rank,
+              current_bid: k.current_bid,
+              target_rank: k.target_rank,
+            })),
+          },
+        }),
+      })
         .then((res) => {
+          if (res?.warning === 'fallback_mode') {
+            setAiFallback(true);
+            setAiSuggestions([]);
+            return;
+          }
+          setAiFallback(false);
           const sugList = res?.data?.suggestions ?? [];
           if (sugList.length > 0) {
             setAiSuggestions(sugList);
@@ -196,7 +206,7 @@ export function DashboardPage() {
     const inMonth = bidLogs.filter((l) => (l.created_at ?? '').slice(0, 10) >= monthStart);
     let saved = 0;
     for (const l of inMonth) {
-      const d = (l.new_bid ?? 0) - (l.prev_bid ?? 0);
+      const d = (l.new_bid ?? 0) - (l.old_bid ?? 0);
       if (d < 0) saved += -d;
     }
     return saved;
@@ -209,11 +219,11 @@ export function DashboardPage() {
 
   const recentBidAdjustments = useMemo(() => {
     return bidLogs.slice(0, 3).map((l) => {
-      const delta = (l.new_bid ?? 0) - (l.prev_bid ?? 0);
-      const pct = l.prev_bid > 0 ? Math.round((delta / l.prev_bid) * 100) : 0;
+      const delta = (l.new_bid ?? 0) - (l.old_bid ?? 0);
+      const pct = l.old_bid > 0 ? Math.round((delta / l.old_bid) * 100) : 0;
       return {
         keyword: l.keyword,
-        from: l.prev_bid,
+        from: l.old_bid,
         to: l.new_bid,
         reason: `${l.current_rank ?? '-'}위→${l.target_rank ?? '-'}위`,
         delta: pct,
@@ -559,6 +569,11 @@ export function DashboardPage() {
               {aiLoading ? (
                 <div className="py-6 text-center">
                   <Loader2 className="w-4 h-4 animate-spin text-violet-500 mx-auto" />
+                </div>
+              ) : aiFallback ? (
+                <div className="py-4 text-center">
+                  <p className="text-xs text-amber-600 font-medium mb-1">AI 분석 준비 중</p>
+                  <p className="text-[10px] text-gray-400">관리자가 설정을 완료하면 활성화됩니다</p>
                 </div>
               ) : visibleSugs.length === 0 ? (
                 <p className="text-xs text-gray-400 text-center py-4">제안 없음</p>
