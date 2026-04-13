@@ -175,7 +175,7 @@ export function AutoBidPage() {
   // Filter + selection state
   const [campaignsGroups, setCampaignsGroups] = useState<CampaignGroup[]>([]);
   const [groupStrategies, setGroupStrategies] = useState<GroupStrategy[]>([]);
-  const [groupPanelOpen, setGroupPanelOpen] = useState(false);
+  const [groupPanelOpen, setGroupPanelOpen] = useState(true);
   const [activeCampaign, setActiveCampaign] = useState<string>('');
   const [editingGroupKey, setEditingGroupKey] = useState<{ campaign_id: string; group_id: string; group_name: string } | null>(null);
   const [showAllGroupsBulk, setShowAllGroupsBulk] = useState(false);
@@ -839,6 +839,36 @@ export function AutoBidPage() {
           isFree={isFree}
         />
       )}
+
+      {tab === 'keywords' && (() => {
+        const unconfigured = keywords.filter((k) => {
+          if (k.bid_setting_id) return false;
+          const raw = k as any;
+          const gid = raw.ncc_adgroup_id ?? raw.group_id ?? raw.groupId ?? '';
+          const cid = raw.ncc_campaign_id ?? raw.campaign_id ?? raw.campaignId ?? '';
+          return !strategyByGroupKey.has(`${cid}::${gid}`);
+        }).length;
+        if (unconfigured === 0) return null;
+        return (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-start gap-2 text-sm text-blue-900">
+              <span className="text-base">💡</span>
+              <span>
+                전략 미설정 키워드 <strong>{unconfigured}개</strong>가 있습니다. 그룹 전략을 설정하면 해당 그룹의 키워드에 자동으로 적용됩니다.
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                setGroupPanelOpen(true);
+                document.querySelector('[data-group-panel]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shrink-0 whitespace-nowrap"
+            >
+              그룹 전략 설정하기 →
+            </button>
+          </div>
+        );
+      })()}
 
       {tab === 'keywords' ? (
         <KeywordsTab
@@ -2258,7 +2288,7 @@ function GroupStrategyPanel(props: {
   const activeGroups = campaignsGroups.find((c) => c.campaign_id === activeCampaign)?.groups ?? [];
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div data-group-panel className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <button
         onClick={onToggle}
         className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
