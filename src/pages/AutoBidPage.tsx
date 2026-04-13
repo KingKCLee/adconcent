@@ -439,8 +439,20 @@ export function AutoBidPage() {
         }),
       });
       const matchedCount = keywords.filter((k) => {
-        if (filterGroup !== 'all') return k.group_id === filterGroup;
-        return k.campaign_id === filterCampaign;
+        const ka = k as any;
+        if (filterGroup !== 'all') {
+          return (
+            k.group_id === filterGroup ||
+            ka.nccAdgroupId === filterGroup ||
+            ka.adgroupId === filterGroup ||
+            k.ncc_adgroup_id === filterGroup
+          );
+        }
+        return (
+          k.campaign_id === filterCampaign ||
+          ka.nccCampaignId === filterCampaign ||
+          ka.campaignId === filterCampaign
+        );
       }).length;
       showToast(`${scopeName}의 ${matchedCount}개 키워드를 등록했습니다`);
       loadKeywords();
@@ -490,6 +502,26 @@ export function AutoBidPage() {
     loadKeywords();
   };
 
+  // 디버그: 그룹 필터링 매칭 확인용 (한 번만)
+  const debugLoggedRef = useRef(false);
+  useEffect(() => {
+    if (debugLoggedRef.current) return;
+    if (campaignsGroups.length === 0 || keywords.length === 0) return;
+    debugLoggedRef.current = true;
+    // eslint-disable-next-line no-console
+    console.log('[AutoBid debug] campaignsGroups groupIds:',
+      campaignsGroups.flatMap((c) => (c.groups ?? []).map((g) => g.group_id)));
+    // eslint-disable-next-line no-console
+    console.log('[AutoBid debug] keyword sample (first 5):',
+      keywords.slice(0, 5).map((k) => ({
+        keyword: k.keyword,
+        group_id: k.group_id,
+        ncc_adgroup_id: k.ncc_adgroup_id,
+        campaign_id: k.campaign_id,
+        rawKeys: Object.keys(k),
+      })));
+  }, [campaignsGroups, keywords]);
+
   // 견적가 자동 재조회: 첫 로드 완료 후 missing > 0이면 30초 뒤 1회 재조회
   useEffect(() => {
     if (tab !== 'keywords') return;
@@ -510,8 +542,24 @@ export function AutoBidPage() {
 
   const filteredKeywords = useMemo(() => {
     return keywords.filter((k) => {
-      if (filterCampaign !== 'all' && k.campaign_id !== filterCampaign) return false;
-      if (filterGroup !== 'all' && k.group_id !== filterGroup) return false;
+      if (filterCampaign !== 'all') {
+        const ka = k as any;
+        const campaignMatch =
+          k.campaign_id === filterCampaign ||
+          ka.nccCampaignId === filterCampaign ||
+          ka.campaignId === filterCampaign;
+        if (!campaignMatch) return false;
+      }
+      if (filterGroup !== 'all') {
+        const ka = k as any;
+        const groupMatch =
+          k.group_id === filterGroup ||
+          ka.nccAdgroupId === filterGroup ||
+          ka.adgroupId === filterGroup ||
+          ka.adgroup_id === filterGroup ||
+          k.ncc_adgroup_id === filterGroup;
+        if (!groupMatch) return false;
+      }
       if (filterDevice !== 'all') {
         const dev = (k.device ?? 'ALL') as Device;
         if (filterDevice === 'PC' && dev === 'M') return false;
