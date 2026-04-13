@@ -491,6 +491,18 @@ export function AutoBidPage() {
     loadKeywords();
   };
 
+  // 검증: filterGroup 변경 시 매칭 카운트 출력
+  useEffect(() => {
+    if (filterGroup === 'all') return;
+    // eslint-disable-next-line no-console
+    console.log(
+      'filterGroup:',
+      filterGroup,
+      'matched:',
+      keywords.filter((k) => (k as any).ncc_adgroup_id === filterGroup).length,
+    );
+  }, [filterGroup, keywords]);
+
   // 디버그: 그룹 필터링 매칭 확인용 (한 번만)
   const debugLoggedRef = useRef(false);
   useEffect(() => {
@@ -532,14 +544,14 @@ export function AutoBidPage() {
   const filteredKeywords = useMemo(() => {
     return keywords.filter((k) => {
       if (filterCampaign !== 'all') {
-        const ka = k as any;
-        const campaignId = ka.ncc_campaign_id || k.campaign_id || ka.nccCampaignId || ka.campaignId || '';
-        if (campaignId !== filterCampaign) return false;
+        const raw = k as any;
+        const cid = raw.ncc_campaign_id ?? raw.campaign_id ?? raw.campaignId ?? '';
+        if (cid !== filterCampaign) return false;
       }
       if (filterGroup !== 'all') {
-        const ka = k as any;
-        const groupId = ka.ncc_adgroup_id || k.group_id || ka.nccAdgroupId || ka.adgroupId || ka.adgroup_id || '';
-        if (groupId !== filterGroup) return false;
+        const raw = k as any;
+        const gid = raw.ncc_adgroup_id ?? raw.group_id ?? raw.groupId ?? '';
+        if (gid !== filterGroup) return false;
       }
       if (filterDevice !== 'all') {
         const dev = (k.device ?? 'ALL') as Device;
