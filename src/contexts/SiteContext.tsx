@@ -34,10 +34,29 @@ const normalizePlan = (p: unknown): PlanType => {
 
 const SiteContext = createContext<SiteContextValue | null>(null);
 
+const SITES_CACHE_KEY = 'adconcent.sites';
+
+function readCachedSites(): SiteInfo[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = sessionStorage.getItem(SITES_CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export function SiteProvider({ children }: { children: ReactNode }) {
-  const [sites, setSites] = useState<SiteInfo[]>([]);
-  const [siteId, setSiteIdState] = useState<string>('');
-  const [isLoading, setIsLoading] = useState(true);
+  const cached = readCachedSites();
+  const [sites, setSites] = useState<SiteInfo[]>(cached);
+  const [siteId, setSiteIdState] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    const stored = localStorage.getItem('adconcent.siteId') ?? '';
+    return cached.find((s) => s.site_id === stored)?.site_id ?? cached[0]?.site_id ?? '';
+  });
+  const [isLoading, setIsLoading] = useState(cached.length === 0);
   const [isError, setIsError] = useState(false);
 
   const load = async () => {
@@ -54,11 +73,13 @@ export function SiteProvider({ children }: { children: ReactNode }) {
         ? resp
         : resp?.data ?? resp?.sites ?? [];
       setSites(list);
+      if (typeof window !== 'undefined') {
+        try { sessionStorage.setItem(SITES_CACHE_KEY, JSON.stringify(list)); } catch {}
+      }
       const stored = typeof window !== 'undefined' ? localStorage.getItem('adconcent.siteId') : null;
       const initial = list.find((s) => s.site_id === stored)?.site_id ?? list[0]?.site_id ?? '';
       setSiteIdState(initial);
     } catch (e) {
-      setSites([]);
       setIsError(true);
     } finally {
       setIsLoading(false);

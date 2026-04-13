@@ -16,6 +16,7 @@ import {
   Search,
   Settings2,
   Download,
+  RefreshCw,
 } from 'lucide-react';
 import { UpgradePrompt } from '@/components/ui/UpgradePrompt';
 import { workerFetch } from '@/lib/api';
@@ -516,6 +517,19 @@ export function AutoBidPage() {
     loadKeywords();
   };
 
+  // 상태별 카운트 (필터 무관, 전체 키워드 기준)
+  const statusCounts = useMemo(() => {
+    const c = { total: keywords.length, achieved: 0, no_impression: 0, bidding: 0, max_reached: 0 };
+    for (const k of keywords) {
+      const kind = getStatus(k).kind;
+      if (kind === 'achieved') c.achieved++;
+      else if (kind === 'no_impression') c.no_impression++;
+      else if (kind === 'bidding') c.bidding++;
+      else if (kind === 'max_reached') c.max_reached++;
+    }
+    return c;
+  }, [keywords]);
+
   const filteredKeywords = useMemo(() => {
     return keywords.filter((k) => {
       if (filterCampaign !== 'all') {
@@ -684,8 +698,13 @@ export function AutoBidPage() {
       showToast('네이버 키워드 ID가 없어 즉시 입찰할 수 없습니다');
       return;
     }
-    if (!confirm(`${won(bidAmt)}으로 즉시 입찰하시겠습니까?`)) return;
     const id = kw.ncc_keyword_id ?? kw.keyword_id;
+    const prevBid = kw.current_bid;
+    // 낙관적 업데이트
+    setKeywords((prev) =>
+      prev.map((k) => (k.keyword === kw.keyword ? { ...k, current_bid: bidAmt } : k)),
+    );
+    showToast(`₩${bidAmt.toLocaleString()}으로 변경됨`);
     try {
       await workerFetch('/naver', {
         method: 'POST',
@@ -701,11 +720,11 @@ export function AutoBidPage() {
           },
         }),
       });
-      setKeywords((prev) =>
-        prev.map((k) => (k.keyword === kw.keyword ? { ...k, current_bid: bidAmt } : k)),
-      );
-      showToast(`입찰가 ${won(bidAmt)}으로 변경됨`);
     } catch (e: any) {
+      // 롤백
+      setKeywords((prev) =>
+        prev.map((k) => (k.keyword === kw.keyword ? { ...k, current_bid: prevBid } : k)),
+      );
       showToast(`입찰 실패: ${e?.message ?? ''}`);
     }
   };
@@ -902,6 +921,7 @@ export function AutoBidPage() {
           onQuickBid={quickBid}
           strategyByGroupKey={strategyByGroupKey}
           onImportByScope={importByScope}
+          statusCounts={statusCounts}
         />
       ) : (
         <LogsTab
@@ -1100,6 +1120,7 @@ interface KeywordsTabProps {
   onQuickBid: (kw: KeywordStat, bidAmt: number) => void;
   strategyByGroupKey: Map<string, GroupStrategy>;
   onImportByScope: () => void;
+  statusCounts: { total: number; achieved: number; no_impression: number; bidding: number; max_reached: number };
 }
 
 function KeywordsTab(props: KeywordsTabProps) {
@@ -1113,6 +1134,7 @@ function KeywordsTab(props: KeywordsTabProps) {
     searchText, setSearchText,
     selectedIds, onToggleSelect, onToggleSelectAll, onOpenBulk,
     onUpdateDevice, onToggleLowestBid, onQuickBid, strategyByGroupKey, onImportByScope,
+    statusCounts,
   } = props;
   const eligibleSelectable = keywords.filter((k) => k.bid_setting_id != null);
   const allSelected =
@@ -1212,9 +1234,56 @@ function KeywordsTab(props: KeywordsTabProps) {
       <div className="bg-white rounded-xl border border-gray-200">
         {/* Action bar */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
-          <h3 className="font-semibold text-gray-900">
-            키워드 자동입찰 ({keywords.length}{totalCount !== keywords.length ? ` / ${totalCount}` : ''}개)
-          </h3>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="font-semibold text-gray-900">
+              {statusCounts.total}개 키워드
+              {totalCount !== keywords.length && (
+                <span className="text-xs text-gray-400 ml-1">(필터 {keywords.length}개)</span>
+              )}
+            </h3>
+            <button
+              onClick={() => setFilterStatus(filterStatus === 'normal' ? 'all' : 'normal')}
+              className={`text-[10px] font-medium px-2 py-1 rounded-full border transition-colors ${
+                filterStatus === 'normal'
+                  ? 'bg-green-100 text-green-700 border-green-300'
+                  : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+              }`}
+              title="목표달성 키워드만 보기"
+            >
+              목표달성 {statusCounts.achieved}
+            </button>
+            <button
+              onClick={() => setFilterStatus(filterStatus === 'no_impression' ? 'all' : 'no_impression')}
+              className={`text-[10px] font-medium px-2 py-1 rounded-full border transition-colors ${
+                filterStatus === 'no_impression'
+                  ? 'bg-amber-100 text-amber-700 border-amber-300'
+                  : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+              }`}
+              title="노출없음 키워드만 보기"
+            >
+              노출없음 {statusCounts.no_impression}
+            </button>
+            <button
+              onClick={() => setFilterStatus(filterStatus === 'normal' ? 'all' : 'normal')}
+              className={`text-[10px] font-medium px-2 py-1 rounded-full border transition-colors bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100`}
+              title="입찰중 키워드"
+            >
+              입찰중 {statusCounts.bidding}
+            </button>
+            {statusCounts.max_reached > 0 && (
+              <button
+                onClick={() => setFilterStatus(filterStatus === 'max_reached' ? 'all' : 'max_reached')}
+                className={`text-[10px] font-medium px-2 py-1 rounded-full border transition-colors ${
+                  filterStatus === 'max_reached'
+                    ? 'bg-red-100 text-red-700 border-red-300'
+                    : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                }`}
+                title="최대입찰가 도달 키워드만 보기"
+              >
+                최대도달 {statusCounts.max_reached}
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={onPreview}
@@ -1250,16 +1319,16 @@ function KeywordsTab(props: KeywordsTabProps) {
                   ? 'bg-gray-200 text-gray-500 hover:bg-gray-300'
                   : 'bg-violet-600 text-white hover:bg-violet-700'
               }`}
-              title="네이버에서 가져온 모든 키워드를 자동입찰에 일괄 등록"
+              title="네이버 광고 계정과 동기화 - 모든 키워드를 자동입찰에 등록"
             >
               {bulkProgress ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : isFree ? (
                 <Lock className="w-3.5 h-3.5" />
               ) : (
-                <Download className="w-3.5 h-3.5" />
+                <RefreshCw className="w-3.5 h-3.5" />
               )}
-              {bulkProgress ? `등록 중... ${bulkProgress.done}/${bulkProgress.total}` : '전체 불러오기'}
+              {bulkProgress ? `동기화 중... ${bulkProgress.done}/${bulkProgress.total}` : '네이버 동기화'}
             </button>
             <button
               onClick={onAdd}
@@ -1577,8 +1646,57 @@ function LogsTab(props: {
   onUpgrade: () => void;
 }) {
   const { logs, loading, summary, isFree, onUpgrade } = props;
-  const visibleLogs = isFree ? logs.slice(0, 3) : logs;
-  const blurredLogs = isFree ? logs.slice(3, 8) : [];
+  const [logDirection, setLogDirection] = useState<'all' | 'up' | 'down'>('all');
+  const [logSearch, setLogSearch] = useState('');
+  const [logDate, setLogDate] = useState<string>('');
+
+  const filteredAllLogs = useMemo(() => {
+    return logs.filter((l) => {
+      if (logDate && (l.created_at ?? '').slice(0, 10) !== logDate) return false;
+      if (logDirection !== 'all') {
+        const d = (l.new_bid ?? 0) - (l.prev_bid ?? 0);
+        if (logDirection === 'up' && d <= 0) return false;
+        if (logDirection === 'down' && d >= 0) return false;
+      }
+      if (logSearch.trim()) {
+        const q = logSearch.trim().toLowerCase();
+        if (!l.keyword.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [logs, logDirection, logSearch, logDate]);
+
+  const visibleLogs = isFree ? filteredAllLogs.slice(0, 3) : filteredAllLogs;
+  const blurredLogs = isFree ? filteredAllLogs.slice(3, 8) : [];
+
+  const downloadCsv = () => {
+    if (isFree) {
+      onUpgrade();
+      return;
+    }
+    const header = ['시간', '키워드', '이전입찰가', '신규입찰가', '변경액', '현재순위', '목표순위', '전략', '사유'];
+    const rows = filteredAllLogs.map((l) => [
+      (l.created_at ?? '').replace('T', ' ').slice(0, 19),
+      l.keyword,
+      String(l.prev_bid ?? 0),
+      String(l.new_bid ?? 0),
+      String((l.new_bid ?? 0) - (l.prev_bid ?? 0)),
+      String(l.current_rank ?? ''),
+      String(l.target_rank ?? ''),
+      l.strategy ?? '',
+      (l.reason ?? '').replace(/"/g, '""'),
+    ]);
+    const csv = [header, ...rows]
+      .map((r) => r.map((c) => `"${c}"`).join(','))
+      .join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bid-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const cards = [
     { label: '오늘 조정 건수', value: `${summary.count}건`, icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-50' },
@@ -1603,8 +1721,40 @@ function LogsTab(props: {
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 mt-6">
-        <div className="px-5 py-4 border-b border-gray-100">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
           <h3 className="font-semibold text-gray-900">입찰 변경 이력</h3>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              type="date"
+              value={logDate}
+              onChange={(e) => setLogDate(e.target.value)}
+              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <select
+              value={logDirection}
+              onChange={(e) => setLogDirection(e.target.value as any)}
+              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">전체</option>
+              <option value="up">상향</option>
+              <option value="down">하향</option>
+            </select>
+            <input
+              type="text"
+              value={logSearch}
+              onChange={(e) => setLogSearch(e.target.value)}
+              placeholder="키워드 검색..."
+              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              onClick={downloadCsv}
+              disabled={filteredAllLogs.length === 0}
+              className="text-xs px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1"
+            >
+              <Download className="w-3 h-3" />
+              CSV
+            </button>
+          </div>
         </div>
         {loading ? (
           <div className="p-12 text-center text-sm text-gray-400">

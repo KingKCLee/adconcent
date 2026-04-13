@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Sparkles, Loader2, AlertCircle, Lightbulb, CheckCircle2, FileText, TrendingUp, Wallet } from 'lucide-react';
 import { workerFetch } from '@/lib/api';
 import { getLimits } from '@/lib/plans';
@@ -101,6 +101,55 @@ export function AnalyticsPage() {
   const [monthlyBudget, setMonthlyBudget] = useState<number>(1000000);
   const [budgetResult, setBudgetResult] = useState<BudgetOptimizerResult | null>(null);
 
+  // Saved analysis results (sessionStorage)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = sessionStorage.getItem('adconcent.analytics');
+      if (!raw) return;
+      const cached = JSON.parse(raw);
+      if (cached.briefing) setBriefing(cached.briefing);
+      if (cached.reportResult) setReportResult(cached.reportResult);
+      if (cached.expansionResult) setExpansionResult(cached.expansionResult);
+      if (cached.budgetResult) setBudgetResult(cached.budgetResult);
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const persistAnalytics = (patch: Record<string, any>) => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = sessionStorage.getItem('adconcent.analytics');
+      const cur = raw ? JSON.parse(raw) : {};
+      sessionStorage.setItem('adconcent.analytics', JSON.stringify({ ...cur, ...patch }));
+    } catch {}
+  };
+
+  const [addedKeywords, setAddedKeywords] = useState<Set<string>>(new Set());
+  const handleAddToAutobid = async (keyword: string) => {
+    if (!siteId) {
+      setError('사이트가 선택되지 않았습니다');
+      return;
+    }
+    try {
+      await workerFetch('/naver/bid-settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          site_id: siteId,
+          keyword,
+          keyword_id: `manual_${keyword}`,
+          target_rank: 3,
+          max_bid: 3000,
+          min_bid: 70,
+          strategy: 'target_rank',
+          is_active: 1,
+        }),
+      });
+      setAddedKeywords((prev) => new Set(prev).add(keyword));
+    } catch (e: any) {
+      setError(`추가 실패: ${e?.message ?? ''}`);
+    }
+  };
+
   const run = async (fn: () => Promise<void>) => {
     if (usage >= FREE_QUOTA) { setShowUpgrade(true); return; }
     setLoading(true); setError('');
@@ -120,6 +169,7 @@ export function AnalyticsPage() {
       bizMoney: 500000, targetCpa: 10000, dailyBudget: 50000,
     });
     setBriefing(result);
+    persistAnalytics({ briefing: result });
   });
 
   const handleKeyword = () => run(async () => {
@@ -155,6 +205,7 @@ export function AnalyticsPage() {
       until: reportUntil,
     });
     setReportResult(result);
+    persistAnalytics({ reportResult: result });
   });
 
   const handleKeywordExpansion = () => run(async () => {
@@ -172,6 +223,7 @@ export function AnalyticsPage() {
     );
     const list = Array.isArray(result) ? result : result?.keywords ?? [];
     setExpansionResult(list);
+    persistAnalytics({ expansionResult: list });
   });
 
   const handleBudgetOptimizer = () => run(async () => {
@@ -184,6 +236,7 @@ export function AnalyticsPage() {
       monthly_budget: monthlyBudget,
     });
     setBudgetResult(result);
+    persistAnalytics({ budgetResult: result });
   });
 
   return (
@@ -494,33 +547,51 @@ export function AnalyticsPage() {
                     <th className="px-3 py-3 font-medium text-right">월 검색량</th>
                     <th className="px-3 py-3 font-medium text-center">경쟁도</th>
                     <th className="px-3 py-3 font-medium">추천 이유</th>
+                    <th className="px-3 py-3 font-medium text-center">액션</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {expansionResult.map((k, i) => (
-                    <tr key={`${k.keyword}-${i}`} className="border-b border-gray-50 hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium text-gray-800">{k.keyword}</td>
-                      <td className="px-3 py-3 text-right text-gray-700">
-                        {k.monthly_search ? k.monthly_search.toLocaleString() : '-'}
-                      </td>
-                      <td className="px-3 py-3 text-center">
-                        {k.competition ? (
-                          <span
-                            className={`text-[10px] font-medium px-2 py-1 rounded-full ${
-                              k.competition === 'high' ? 'bg-red-50 text-red-600' :
-                              k.competition === 'medium' ? 'bg-amber-50 text-amber-600' :
-                              'bg-green-50 text-green-600'
-                            }`}
-                          >
-                            {k.competition === 'high' ? '높음' : k.competition === 'medium' ? '중간' : '낮음'}
-                          </span>
-                        ) : (
-                          <span className="text-gray-300">-</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 text-xs text-gray-500">{k.reason ?? '-'}</td>
-                    </tr>
-                  ))}
+                  {expansionResult.map((k, i) => {
+                    const added = addedKeywords.has(k.keyword);
+                    return (
+                      <tr key={`${k.keyword}-${i}`} className="border-b border-gray-50 hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium text-gray-800">{k.keyword}</td>
+                        <td className="px-3 py-3 text-right text-gray-700">
+                          {k.monthly_search ? k.monthly_search.toLocaleString() : '-'}
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          {k.competition ? (
+                            <span
+                              className={`text-[10px] font-medium px-2 py-1 rounded-full ${
+                                k.competition === 'high' ? 'bg-red-50 text-red-600' :
+                                k.competition === 'medium' ? 'bg-amber-50 text-amber-600' :
+                                'bg-green-50 text-green-600'
+                              }`}
+                            >
+                              {k.competition === 'high' ? '높음' : k.competition === 'medium' ? '중간' : '낮음'}
+                            </span>
+                          ) : (
+                            <span className="text-gray-300">-</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-xs text-gray-500">{k.reason ?? '-'}</td>
+                        <td className="px-3 py-3 text-center">
+                          {added ? (
+                            <span className="text-[10px] text-green-600 font-medium flex items-center gap-1 justify-center">
+                              <CheckCircle2 className="w-3 h-3" /> 추가됨
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleAddToAutobid(k.keyword)}
+                              className="text-[10px] px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                            >
+                              + 자동입찰
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

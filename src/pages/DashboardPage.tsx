@@ -164,7 +164,7 @@ export function DashboardPage() {
         })
         .catch(() => setAiSuggestions([]))
         .finally(() => setAiLoading(false));
-    }, 3000);
+    }, 2000);
     return () => clearTimeout(timer);
   }, [siteId, keywords]);
 
