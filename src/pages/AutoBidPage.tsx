@@ -2481,16 +2481,27 @@ function GroupStrategyModal(props: {
     setError(null);
     setApplying(true);
     try {
+      const payload = buildPayload();
       if (allGroupsMode) {
+        // eslint-disable-next-line no-console
+        console.log('[GroupStrategy] apply (all groups):', {
+          targets: allGroupTargets.length,
+          force: true,
+          target_rank: payload.target_rank,
+          max_bid: payload.max_bid,
+          min_bid: payload.min_bid,
+          device: payload.device,
+          lowest_bid: payload.lowest_bid,
+        });
         await Promise.allSettled(
           allGroupTargets.map((t) =>
             workerFetch('/naver/group-strategy', {
               method: 'POST',
-              body: JSON.stringify({ ...buildPayload(), campaign_id: t.campaign_id, group_id: t.group_id }),
+              body: JSON.stringify({ ...payload, campaign_id: t.campaign_id, group_id: t.group_id }),
             }),
           ),
         );
-        await Promise.allSettled(
+        const applyResults = await Promise.allSettled(
           allGroupTargets.map((t) =>
             workerFetch('/naver/group-strategy/apply', {
               method: 'POST',
@@ -2503,12 +2514,28 @@ function GroupStrategyModal(props: {
             }),
           ),
         );
+        // eslint-disable-next-line no-console
+        console.log('[GroupStrategy] apply responses (all groups):', applyResults);
       } else {
-        await workerFetch('/naver/group-strategy', {
-          method: 'POST',
-          body: JSON.stringify(buildPayload()),
+        // eslint-disable-next-line no-console
+        console.log('[GroupStrategy] apply called:', {
+          site_id: siteId,
+          campaign_id: campaignId,
+          group_id: groupId,
+          force: true,
+          target_rank: payload.target_rank,
+          max_bid: payload.max_bid,
+          min_bid: payload.min_bid,
+          device: payload.device,
+          lowest_bid: payload.lowest_bid,
         });
-        await workerFetch('/naver/group-strategy/apply', {
+        const saveRes = await workerFetch('/naver/group-strategy', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        // eslint-disable-next-line no-console
+        console.log('[GroupStrategy] save response:', saveRes);
+        const applyRes = await workerFetch('/naver/group-strategy/apply', {
           method: 'POST',
           body: JSON.stringify({
             site_id: siteId,
@@ -2517,9 +2544,13 @@ function GroupStrategyModal(props: {
             force: true,
           }),
         });
+        // eslint-disable-next-line no-console
+        console.log('[GroupStrategy] apply response:', applyRes);
       }
       onApplyToAll(keywordCount);
     } catch (e: any) {
+      // eslint-disable-next-line no-console
+      console.error('[GroupStrategy] apply error:', e);
       setError(e?.message ?? '적용 실패');
     } finally {
       setApplying(false);
