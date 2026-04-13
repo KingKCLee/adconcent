@@ -68,8 +68,8 @@ export function useAdAccount() {
           .order('created_at');
         setGroupSettings((groups || []).map(g => rowToGroupSetting(g as AdGroupSettingRow)));
       }
-    } catch (e) {
-      console.error('광고 계정 조회 실패:', e);
+    } catch {
+      // silent
     } finally {
       setLoading(false);
     }

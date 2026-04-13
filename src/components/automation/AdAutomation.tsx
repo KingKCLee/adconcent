@@ -233,8 +233,8 @@ export default function AdAutomation({ adAccountId }: AdAutomationProps) {
 
         setCompetitorData(prev => ({ ...prev, [ag.name]: { keywords: kwData, avg, loading: false } }));
       }
-    } catch (e) {
-      console.error('경쟁 입찰가 조회 실패:', e);
+    } catch {
+      // silent
     }
   }, [adAccountId]);
 
@@ -282,8 +282,8 @@ export default function AdAutomation({ adAccountId }: AdAutomationProps) {
       // 최신 로그의 blockedGroups 추출
       const latest = mapped[0];
       setBlockedGroups(latest?.details?.blockedGroups || []);
-    } catch (e) {
-      console.error(e);
+    } catch {
+      // silent
     } finally {
       setLogsLoading(false);
     }
@@ -388,9 +388,8 @@ export default function AdAutomation({ adAccountId }: AdAutomationProps) {
       }
       toast.success('설정이 저장되었습니다');
       setShowRunAfterSave(true);
-    } catch (e) {
+    } catch {
       toast.error('저장 실패');
-      console.error(e);
     } finally {
       setSaving(false);
     }

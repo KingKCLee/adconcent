@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { Sparkles, Loader2, AlertCircle, Lightbulb, CheckCircle2, FileText, TrendingUp, Wallet } from 'lucide-react';
 import { workerFetch, fetchNaverStats } from '@/lib/api';
 import { getLimits } from '@/lib/plans';
@@ -214,8 +215,8 @@ export function AnalyticsPage() {
     try {
       await fn();
       setUsage(u => u + 1);
-    } catch {
-      setError('분석 중 오류가 발생했습니다');
+    } catch (e: any) {
+      toast.error(`AI 분석 실패: ${e?.message ?? '요청 중 오류가 발생했습니다'}`);
     } finally {
       setLoading(false);
     }

@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
+import { toast } from 'sonner';
 import { workerFetch, fetchNaverStats } from '@/lib/api';
 import { getLimits } from '@/lib/plans';
 import { UpgradePrompt } from '@/components/ui/UpgradePrompt';
@@ -298,7 +299,7 @@ export function ClickFraudPage() {
       setBlockedThisMonth((n) => n + 1);
       loadStats();
     } catch (e) {
-      alert(`차단 실패: ${(e as Error).message}`);
+      toast.error(`차단 실패: ${(e as Error).message}`);
     }
   };
 

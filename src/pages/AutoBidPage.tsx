@@ -261,8 +261,8 @@ export function AutoBidPage() {
         setLoadProgress({ loaded: all.length, total: first.total });
         if (all.length > 5000) break; // safety cap
       }
-    } catch (e) {
-      console.error('keyword-stats load failed', e);
+    } catch {
+      // silent
     } finally {
       setLoadingKw(false);
       setLoadProgress(null);
@@ -278,8 +278,7 @@ export function AutoBidPage() {
       );
       const list = Array.isArray(data) ? data : data?.logs ?? [];
       setLogs(list);
-    } catch (e) {
-      console.error('bid-logs load failed', e);
+    } catch {
       setLogs([]);
     } finally {
       setLoadingLogs(false);

@@ -393,14 +393,10 @@ export async function fetchStats(
     until: dateRange.until,
   };
 
-  console.log('📊 stats 요청:', statsParams);
-
   // statsParams를 전달하면 Edge Function이 server.js와 동일 방식으로 URL 구성
   const result = await callWithAccountKeys<NaverStatRow[]>(
     adAccountId, 'GET', '/stats', undefined, statsParams
   );
-
-  console.log('📊 stats 응답:', JSON.stringify(result, null, 2));
 
   if (Array.isArray(result.data)) return result.data;
   return [];

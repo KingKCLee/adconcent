@@ -73,8 +73,8 @@ export function useNaverApi(adAccountId: string | undefined) {
     try {
       const amount = await naverApi.fetchBizMoney(adAccountId);
       setBizMoney(amount);
-    } catch (e) {
-      console.error('비즈머니 조회 실패:', e);
+    } catch {
+      // silent
     }
   }, [adAccountId]);
 

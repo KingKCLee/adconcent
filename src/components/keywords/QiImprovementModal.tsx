@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { X, CheckCircle2, AlertTriangle, Loader2, Sparkles } from 'lucide-react';
 import { fetchAds, fetchAdExtensions } from '@/lib/naverApi';
 
@@ -171,7 +172,7 @@ export default function QiImprovementModal({ keyword, currentGrade, adAccountId,
                 detail="랜딩페이지의 제목/본문에 키워드가 포함되어 있는지 확인하세요"
                 action={(
                   <button
-                    onClick={() => alert('페이지 분석 기능은 준비 중입니다.')}
+                    onClick={() => toast.info('페이지 분석 기능은 준비 중입니다.')}
                     className="px-2 py-1 text-[10px] bg-slate-600 text-white rounded hover:bg-slate-700 whitespace-nowrap">
                     페이지 분석
                   </button>

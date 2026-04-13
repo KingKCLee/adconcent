@@ -126,9 +126,8 @@ export default function TimeStrategy({ adAccountId }: TimeStrategyProps) {
       }
       await fetchStrategy();
       toast.success('시간대 전략 저장됨');
-    } catch (e) {
+    } catch {
       toast.error('저장 실패');
-      console.error(e);
     } finally {
       setSaving(false);
     }

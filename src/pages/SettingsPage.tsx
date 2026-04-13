@@ -89,8 +89,7 @@ export function SettingsPage() {
       if (list.length > 0 && !selectedId) {
         setSelectedId(list[0].site_id);
       }
-    } catch (e) {
-      console.error('sites load failed', e);
+    } catch {
       setSites([]);
     } finally {
       setLoading(false);

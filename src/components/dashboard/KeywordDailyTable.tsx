@@ -133,10 +133,6 @@ export default function KeywordDailyTable({ days = 7 }: { days?: number }) {
           statsByName[kwName] = { clicks, cost, cpc: clicks > 0 ? Math.round(cost / clicks) : 0 };
         }
 
-        if (import.meta.env.DEV) {
-          console.log('[KeywordDailyTable]', date, 'stats:', Object.keys(statsByName).length, 'rank:', table[date] ? Object.keys(table[date]).length : 0);
-        }
-
         // rankTable 셀에 stats 채우기 (keyword명 기준 매칭)
         if (table[date]) {
           for (const rank of Object.keys(table[date])) {

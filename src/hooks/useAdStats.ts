@@ -97,8 +97,8 @@ export function useAdStats(adAccountId: string | undefined) {
 
       if (error) throw error;
       setReports((data || []).map(r => rowToReport(r as AdReportRow)));
-    } catch (e) {
-      console.error('보고서 조회 실패:', e);
+    } catch {
+      // silent
     } finally {
       setLoading(false);
     }
@@ -116,8 +116,8 @@ export function useAdStats(adAccountId: string | undefined) {
 
       if (error) throw error;
       setBidLogs((data || []).map(l => rowToBidLog(l as AdBidLogRow)));
-    } catch (e) {
-      console.error('입찰 로그 조회 실패:', e);
+    } catch {
+      // silent
     }
   }, [adAccountId]);
 

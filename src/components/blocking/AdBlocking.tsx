@@ -167,8 +167,8 @@ export default function AdBlocking({ adAccountId }: AdBlockingProps) {
       ]);
       setBlacklist((bl || []) as AdIpBlacklistRow[]);
       setWhitelist(wl || []);
-    } catch (e) {
-      console.error(e);
+    } catch {
+      // silent
     } finally {
       setLoading(false);
     }
@@ -335,8 +335,8 @@ export default function AdBlocking({ adAccountId }: AdBlockingProps) {
           .eq('ad_account_id', adAccountId)
           .order('created_at', { ascending: false });
         setRefundRequests((reqs || []) as RefundRequestRow[]);
-      } catch (e) {
-        console.error('refund auto-add failed:', e);
+      } catch {
+        // silent
       }
     }
   }, [adAccountId]);
@@ -388,7 +388,6 @@ export default function AdBlocking({ adAccountId }: AdBlockingProps) {
         .eq('ip', ip)
         .maybeSingle();
       if (selErr) {
-        console.error('[addBlockIp] select error:', selErr);
         toast.error(`DB 조회 실패: ${selErr.message}`);
         return;
       }
@@ -401,7 +400,6 @@ export default function AdBlocking({ adAccountId }: AdBlockingProps) {
           click_count: 0,
         });
         if (insErr) {
-          console.error('[addBlockIp] insert error:', insErr);
           toast.error(`DB 저장 실패: ${insErr.message}`);
           return;
         }
@@ -410,11 +408,10 @@ export default function AdBlocking({ adAccountId }: AdBlockingProps) {
       try {
         const result = await registerIpExclusion(adAccountId, ip);
         if (!result.error) {
-          const { error: updErr } = await supabase.from('ad_ip_blacklist').update({
+          await supabase.from('ad_ip_blacklist').update({
             naver_registered: true,
             registered_at: new Date().toISOString(),
           }).eq('ad_account_id', adAccountId).eq('ip', ip);
-          if (updErr) console.error('[addBlockIp] update error:', updErr);
           toast.success(`${ip} 차단 + 네이버 등록 완료`);
         } else {
           toast.error(`네이버 등록 실패: ${result.error}`);
@@ -457,15 +454,14 @@ export default function AdBlocking({ adAccountId }: AdBlockingProps) {
           .eq('ip', ip)
           .maybeSingle();
         if (selErr) {
-          console.error('[handleRegisterNaver] select error:', selErr);
+          // silent
         } else if (existing) {
-          const { error: updErr } = await supabase.from('ad_ip_blacklist').update({
+          await supabase.from('ad_ip_blacklist').update({
             naver_registered: true,
             registered_at: new Date().toISOString(),
           }).eq('id', existing.id);
-          if (updErr) console.error('[handleRegisterNaver] update error:', updErr);
         } else {
-          const { error: insErr } = await supabase.from('ad_ip_blacklist').insert({
+          await supabase.from('ad_ip_blacklist').insert({
             ad_account_id: adAccountId,
             ip,
             description: '자동 감지 → 네이버 등록',
@@ -474,7 +470,6 @@ export default function AdBlocking({ adAccountId }: AdBlockingProps) {
             naver_registered: true,
             registered_at: new Date().toISOString(),
           });
-          if (insErr) console.error('[handleRegisterNaver] insert error:', insErr);
         }
         fetchData(); fetchNaverIps();
       }
@@ -496,12 +491,11 @@ export default function AdBlocking({ adAccountId }: AdBlockingProps) {
         toast.error(`삭제 실패: ${result.error}`);
       } else {
         // Supabase ad_ip_blacklist 에서도 제거 (네이버 ↔ DB 일관성)
-        const { error: delErr } = await supabase
+        await supabase
           .from('ad_ip_blacklist')
           .delete()
           .eq('ad_account_id', adAccountId)
           .eq('ip', ip);
-        if (delErr) console.error('[handleDeleteNaverIp] delete error:', delErr);
         toast.success(`네이버 차단 삭제: ${ip}`);
         fetchNaverIps();
         fetchData();

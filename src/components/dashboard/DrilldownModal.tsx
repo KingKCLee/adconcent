@@ -84,8 +84,7 @@ export default function DrilldownModal({ adAccountId, type, dateLabel, since, un
           .sort((a, b) => (b[sortField] as number) - (a[sortField] as number));
 
         setRows(result);
-      } catch (e) {
-        console.error(e);
+      } catch {
         setRows([]);
       } finally {
         setLoading(false);
