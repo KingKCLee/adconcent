@@ -97,26 +97,8 @@ const fmtKst = (v: string | number | null | undefined): string => {
 };
 
 function buildPixelSnippet(siteId: string) {
-  return `<!-- AdConcent 부정클릭 차단 픽셀 -->
-<script>
-(function() {
-  var params = new URLSearchParams(window.location.search);
-  var data = {
-    site_id: '${siteId}',
-    keyword: params.get('nk') || params.get('keyword') || '',
-    device: /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'pc',
-    referrer: document.referrer,
-    landing_url: window.location.href,
-    ts: Date.now()
-  };
-  fetch('${WORKER_URL}/collect', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(data),
-    keepalive: true
-  }).catch(function(){});
-})();
-</script>`;
+  return `<!-- AdConcent 부정클릭 방지 픽셀 -->
+<script async src="${WORKER_URL}/pixel.js?site_id=${siteId}"></script>`;
 }
 
 function rangeFor(p: Period) {
@@ -635,9 +617,12 @@ export function ClickFraudPage() {
           <h3 className="font-semibold text-gray-900">픽셀 설치 가이드</h3>
         </div>
         <p className="text-sm text-gray-500 mb-4">
-          아래 픽셀 코드를 광고 랜딩 페이지의{' '}
-          <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">&lt;head&gt;</code> 또는 페이지 최상단에 붙여넣으세요.
-          URL 파라미터 <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">?nk=키워드</code>를 자동 수집합니다.
+          아래 한 줄 스크립트를 광고 랜딩 페이지의{' '}
+          <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">&lt;head&gt;</code> 내부에 붙여넣으세요.
+          네이버 검색광고 자동 추적 URL(<code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">n_keyword</code>,{' '}
+          <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">n_query</code>,{' '}
+          <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">n_rank</code> 등)과 커스텀 파라미터(<code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">nk</code>, <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">keyword</code>, <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">utm_term</code>)를 모두 자동 수집합니다.
+          픽셀 로직 업데이트는 Worker 배포만으로 즉시 반영됩니다.
         </p>
         <div className="bg-gray-50 rounded-lg p-3 mb-4">
           <pre className="text-[11px] text-gray-700 font-mono whitespace-pre-wrap break-all max-h-64 overflow-auto">{PIXEL_SNIPPET}</pre>
@@ -663,6 +648,16 @@ export function ClickFraudPage() {
             </span>
           )}
           {installCheck === 'fail' && <span className="text-sm text-red-600">Worker 응답 실패</span>}
+        </div>
+
+        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <h4 className="font-semibold text-blue-900 mb-2">네이버 검색광고 자동 추적 URL 켜기 (필수)</h4>
+          <p className="text-sm text-blue-800 mb-2">
+            네이버 광고시스템 로그인 → 광고관리 → 캠페인 선택 → <strong>고급옵션</strong> → <strong>추적 기능</strong> → <strong>추적 기능 사용</strong> 선택 후 저장.
+          </p>
+          <p className="text-xs text-blue-700">
+            켜면 랜딩 URL에 <code className="bg-white/60 px-1 rounded">n_keyword</code>, <code className="bg-white/60 px-1 rounded">n_query</code>, <code className="bg-white/60 px-1 rounded">n_rank</code>, <code className="bg-white/60 px-1 rounded">n_ad_group</code>, <code className="bg-white/60 px-1 rounded">n_ad</code>, <code className="bg-white/60 px-1 rounded">n_keyword_id</code>, <code className="bg-white/60 px-1 rounded">n_media</code> 파라미터가 자동 부착됩니다. 이 설정이 없으면 키워드·순위·광고그룹 정보가 수집되지 않습니다.
+          </p>
         </div>
       </div>
 
