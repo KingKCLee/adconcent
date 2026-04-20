@@ -26,16 +26,16 @@ interface TopIp {
   ip: string;
   count: number;
   status?: string;
-  first_seen?: string;
-  last_seen?: string;
-  firstSeen?: string;
-  lastSeen?: string;
+  first_seen?: string | number;
+  last_seen?: string | number;
+  firstSeen?: string | number;
+  lastSeen?: string | number;
 }
 
 interface RecentLog {
   id?: string | number;
-  time?: string;
-  created_at?: string;
+  time?: string | number;
+  created_at?: string | number;
   ip: string;
   keyword?: string;
   device?: string;
@@ -81,6 +81,20 @@ const FALLBACK_AVG_CPC = 800;
 const num = (n: number) => (n ?? 0).toLocaleString();
 const won = (n: number) => `₩${num(n ?? 0)}`;
 const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
+
+// 초/밀리초/ISO 문자열 모두 안전하게 KST 표시 — Worker는 click_at을 초 단위(unixepoch)로 응답
+const fmtKst = (v: string | number | null | undefined): string => {
+  if (v == null || v === '') return '-';
+  const n = typeof v === 'number' ? v : Number(v);
+  let d: Date;
+  if (Number.isFinite(n)) {
+    d = new Date(n < 1e12 ? n * 1000 : n);
+  } else {
+    d = new Date(String(v));
+  }
+  if (isNaN(d.getTime())) return '-';
+  return d.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+};
 
 function buildPixelSnippet(siteId: string) {
   return `<!-- AdConcent 부정클릭 차단 픽셀 -->
@@ -524,10 +538,10 @@ export function ClickFraudPage() {
                         </span>
                       </td>
                       <td className="px-3 py-3 text-xs text-gray-500">
-                        {first ? new Date(first).toLocaleString('ko-KR') : '-'}
+                        {fmtKst(first)}
                       </td>
                       <td className="px-3 py-3 text-xs text-gray-500">
-                        {last ? new Date(last).toLocaleString('ko-KR') : '-'}
+                        {fmtKst(last)}
                       </td>
                       <td className="px-3 py-3 text-center">
                         {status !== '차단됨' && (
@@ -587,7 +601,7 @@ export function ClickFraudPage() {
                   return (
                     <tr key={row.id ?? `${row.ip}-${idx}`} className="border-b border-gray-50 hover:bg-gray-50">
                       <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">
-                        {t ? new Date(t).toLocaleString('ko-KR') : '-'}
+                        {fmtKst(t)}
                       </td>
                       <td className="px-3 py-3 font-mono text-xs text-gray-700">{row.ip}</td>
                       <td className="px-3 py-3 text-gray-700">{row.keyword || <span className="text-gray-300">-</span>}</td>
