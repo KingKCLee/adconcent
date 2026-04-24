@@ -218,9 +218,12 @@ export function LandingPage() {
             <span style={{ color: COLORS.white, fontWeight: 600, fontSize: 18 }}>AdConcent</span>
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-            <Link to="/login" style={{ fontSize: 14, color: COLORS.gray400, textDecoration: 'none' }}>
+            {/* Worker 로그인 페이지(/login, Google OAuth)로 라우팅. React Router Link 대신
+                <a>를 써서 full page reload를 유발하고 Cloudflare Workers Route가 가로채도록 함.
+                Phase Zeta-J. */}
+            <a href="/login" style={{ fontSize: 14, color: COLORS.gray400, textDecoration: 'none' }}>
               로그인
-            </Link>
+            </a>
             <Link
               to="/signup"
               style={{
