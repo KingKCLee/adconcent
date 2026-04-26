@@ -17,6 +17,7 @@ import { MetaPage } from '@/pages/MetaPage';
 import { YoutubePage } from '@/pages/YoutubePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { BillingPage } from '@/pages/BillingPage';
+import CampaignDetailPage from '@/pages/CampaignDetailPage';
 
 export default function App() {
   return (
@@ -41,6 +42,7 @@ export default function App() {
             <Route path="/dashboard/youtube" element={<YoutubePage />} />
             <Route path="/dashboard/settings" element={<SettingsPage />} />
             <Route path="/dashboard/billing" element={<BillingPage />} />
+            <Route path="/dashboard/campaigns/:id" element={<CampaignDetailPage />} />
           </Route>
         </Route>
       </Routes>
