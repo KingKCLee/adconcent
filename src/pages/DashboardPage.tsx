@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { usePlan } from '@/hooks/usePlan';
 import { useSite } from '@/contexts/SiteContext';
 import { Loader2 } from 'lucide-react';
+import ActiveCampaignsSection from '@/components/dashboard/ActiveCampaignsSection';
 
 interface StatsResponse {
   ips: { ip: string; count: number; events: { event: string; time: string }[] }[];
@@ -600,6 +601,13 @@ export function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* 활성 Google Ads 캠페인 */}
+      <ActiveCampaignsSection
+        channelType="ALL"
+        title="활성 Google Ads 캠페인"
+        emoji="🎯"
+      />
     </div>
   );
 }

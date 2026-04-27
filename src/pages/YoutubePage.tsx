@@ -1,6 +1,7 @@
 import { Play, Sparkles, Eye, Clock, ShieldCheck, Lock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { usePlan } from '@/hooks/usePlan';
+import ActiveCampaignsSection from '@/components/dashboard/ActiveCampaignsSection';
 
 export function YoutubePage() {
   const { plan } = usePlan();
@@ -93,6 +94,13 @@ export function YoutubePage() {
           광고 데이터가 수집되면 시간대별 효율 차트가 표시됩니다.
         </div>
       </div>
+
+      {/* YouTube/DemandGen 캠페인 목록 */}
+      <ActiveCampaignsSection
+        channelType="YOUTUBE"
+        title="활성 YouTube / DemandGen 캠페인"
+        emoji="📺"
+      />
     </div>
   );
 }
