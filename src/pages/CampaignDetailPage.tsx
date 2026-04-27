@@ -55,7 +55,7 @@ interface CampaignMetrics {
   }> | null;
 }
 
-const WORKER_URL = import.meta.env.VITE_ADCONCENT_WORKER_URL;
+const WORKER_URL = import.meta.env.VITE_API_BASE || import.meta.env.VITE_ADCONCENT_WORKER_URL || 'https://adconcent.com';
 
 export default function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
