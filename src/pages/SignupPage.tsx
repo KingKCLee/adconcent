@@ -19,7 +19,7 @@ export function SignupPage() {
       setError(err.message);
       setLoading(false);
     } else {
-      navigate('/dashboard');
+      navigate('/workspace');
     }
   };
 

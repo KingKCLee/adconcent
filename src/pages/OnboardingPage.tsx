@@ -24,7 +24,7 @@ export function OnboardingPage() {
         const j = await r.json().catch(() => ({ error: r.statusText }));
         throw new Error(j.error || `HTTP ${r.status}`);
       }
-      navigate('/dashboard/connect');
+      navigate('/workspace/connect');
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
