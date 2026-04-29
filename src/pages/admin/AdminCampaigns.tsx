@@ -42,7 +42,7 @@ export default function AdminCampaigns() {
       </div>
 
       <div className="bg-white border border-gray-200 rounded-lg p-6 text-sm text-gray-600">
-        시흥거모B1 + DemandGen LIVE 캠페인은 <a href="/admin/google/campaigns" className="text-blue-600 underline">구글 캠페인 관리</a>에서 mutate 가능합니다.
+        시흥거모B1 + DemandGen LIVE 캠페인은 <a href="/workspace/google/campaigns" className="text-blue-600 underline">구글 캠페인 관리</a>에서 mutate 가능합니다.
       </div>
     </div>
   );

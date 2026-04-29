@@ -76,23 +76,23 @@ export default function App() {
 
           {/* /admin/* — 매체별 분리 (Phase Admin Media) */}
           <Route element={<AdminLayout />}>
-            <Route path="/admin" element={<Suspense fallback={<AdminFallback />}><AdminHome /></Suspense>} />
-            <Route path="/admin/campaigns" element={<Suspense fallback={<AdminFallback />}><AdminCampaigns /></Suspense>} />
-            <Route path="/admin/leads" element={<Suspense fallback={<AdminFallback />}><AdminLeads /></Suspense>} />
-            <Route path="/admin/sites" element={<Suspense fallback={<AdminFallback />}><AdminSites /></Suspense>} />
-            <Route path="/admin/naver" element={<Suspense fallback={<AdminFallback />}><NaverDashboard /></Suspense>} />
-            <Route path="/admin/naver/autobid" element={<Suspense fallback={<AdminFallback />}><NaverAutoBid /></Suspense>} />
-            <Route path="/admin/naver/keywords" element={<Suspense fallback={<AdminFallback />}><NaverKeywords /></Suspense>} />
-            <Route path="/admin/naver/click-fraud" element={<Suspense fallback={<AdminFallback />}><NaverClickFraud /></Suspense>} />
-            <Route path="/admin/naver/stats" element={<Suspense fallback={<AdminFallback />}><NaverStats /></Suspense>} />
-            <Route path="/admin/naver/settings" element={<Suspense fallback={<AdminFallback />}><NaverSettings /></Suspense>} />
-            <Route path="/admin/google" element={<Suspense fallback={<AdminFallback />}><GoogleDashboard /></Suspense>} />
-            <Route path="/admin/google/campaigns" element={<Suspense fallback={<AdminFallback />}><GoogleCampaigns /></Suspense>} />
-            <Route path="/admin/google/audit" element={<Suspense fallback={<AdminFallback />}><GoogleAudit /></Suspense>} />
-            <Route path="/admin/google/stats" element={<Suspense fallback={<AdminFallback />}><GoogleStats /></Suspense>} />
-            <Route path="/admin/google/settings" element={<Suspense fallback={<AdminFallback />}><GoogleSettings /></Suspense>} />
-            <Route path="/admin/ai" element={<Suspense fallback={<AdminFallback />}><AIPage /></Suspense>} />
-            <Route path="/admin/billing" element={<Suspense fallback={<AdminFallback />}><AdminBilling /></Suspense>} />
+            <Route path="/workspace" element={<Suspense fallback={<AdminFallback />}><AdminHome /></Suspense>} />
+            <Route path="/workspace/campaigns" element={<Suspense fallback={<AdminFallback />}><AdminCampaigns /></Suspense>} />
+            <Route path="/workspace/leads" element={<Suspense fallback={<AdminFallback />}><AdminLeads /></Suspense>} />
+            <Route path="/workspace/sites" element={<Suspense fallback={<AdminFallback />}><AdminSites /></Suspense>} />
+            <Route path="/workspace/naver" element={<Suspense fallback={<AdminFallback />}><NaverDashboard /></Suspense>} />
+            <Route path="/workspace/naver/autobid" element={<Suspense fallback={<AdminFallback />}><NaverAutoBid /></Suspense>} />
+            <Route path="/workspace/naver/keywords" element={<Suspense fallback={<AdminFallback />}><NaverKeywords /></Suspense>} />
+            <Route path="/workspace/naver/click-fraud" element={<Suspense fallback={<AdminFallback />}><NaverClickFraud /></Suspense>} />
+            <Route path="/workspace/naver/stats" element={<Suspense fallback={<AdminFallback />}><NaverStats /></Suspense>} />
+            <Route path="/workspace/naver/settings" element={<Suspense fallback={<AdminFallback />}><NaverSettings /></Suspense>} />
+            <Route path="/workspace/google" element={<Suspense fallback={<AdminFallback />}><GoogleDashboard /></Suspense>} />
+            <Route path="/workspace/google/campaigns" element={<Suspense fallback={<AdminFallback />}><GoogleCampaigns /></Suspense>} />
+            <Route path="/workspace/google/audit" element={<Suspense fallback={<AdminFallback />}><GoogleAudit /></Suspense>} />
+            <Route path="/workspace/google/stats" element={<Suspense fallback={<AdminFallback />}><GoogleStats /></Suspense>} />
+            <Route path="/workspace/google/settings" element={<Suspense fallback={<AdminFallback />}><GoogleSettings /></Suspense>} />
+            <Route path="/workspace/ai" element={<Suspense fallback={<AdminFallback />}><AIPage /></Suspense>} />
+            <Route path="/workspace/billing" element={<Suspense fallback={<AdminFallback />}><AdminBilling /></Suspense>} />
           </Route>
         </Route>
       </Routes>

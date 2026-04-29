@@ -53,13 +53,13 @@ export default function AdminHome() {
         <h2 className="font-bold text-gray-900 mb-2">매체 별 빠른 이동</h2>
         <p className="text-sm text-gray-500 mb-4">사이드바에서 네이버 / 구글로 들어가 매체별 깊이 분석.</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <a href="/admin/naver" className="block px-4 py-3 rounded-lg bg-[#03C75A]/10 text-[#03C75A] font-medium text-sm hover:bg-[#03C75A]/20">
+          <a href="/workspace/naver" className="block px-4 py-3 rounded-lg bg-[#03C75A]/10 text-[#03C75A] font-medium text-sm hover:bg-[#03C75A]/20">
             🟢 네이버 광고 →
           </a>
-          <a href="/admin/google" className="block px-4 py-3 rounded-lg bg-[#4285F4]/10 text-[#4285F4] font-medium text-sm hover:bg-[#4285F4]/20">
+          <a href="/workspace/google" className="block px-4 py-3 rounded-lg bg-[#4285F4]/10 text-[#4285F4] font-medium text-sm hover:bg-[#4285F4]/20">
             🔵 구글 광고 →
           </a>
-          <a href="/admin/ai" className="block px-4 py-3 rounded-lg bg-violet-100 text-violet-700 font-medium text-sm hover:bg-violet-200">
+          <a href="/workspace/ai" className="block px-4 py-3 rounded-lg bg-violet-100 text-violet-700 font-medium text-sm hover:bg-violet-200">
             ✨ AI 분석 →
           </a>
         </div>
