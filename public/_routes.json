@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "include": ["/api/*"],
+  "exclude": [
+    "/admin/*",
+    "/dashboard/*",
+    "/onboarding",
+    "/workspace/*",
+    "/assets/*",
+    "/favicon.ico",
+    "/favicon.svg",
+    "/logo.svg",
+    "/_redirects",
+    "/_headers"
+  ]
+}
