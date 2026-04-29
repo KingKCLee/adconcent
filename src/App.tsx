@@ -18,6 +18,8 @@ import { YoutubePage } from '@/pages/YoutubePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { BillingPage } from '@/pages/BillingPage';
 import CampaignDetailPage from '@/pages/CampaignDetailPage';
+import { OnboardingPage } from '@/pages/OnboardingPage';
+import { ConnectPage } from '@/pages/ConnectPage';
 
 export default function App() {
   return (
@@ -30,8 +32,10 @@ export default function App() {
         <Route path="/privacy" element={<PrivacyPage />} />
 
         <Route element={<PrivateRoute />}>
+          <Route path="/onboarding" element={<OnboardingPage />} />
           <Route element={<DashboardLayout />}>
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/dashboard/connect" element={<ConnectPage />} />
             <Route path="/dashboard/autobid" element={<AutoBidPage />} />
             <Route path="/dashboard/shopping" element={<ShoppingPage />} />
             <Route path="/dashboard/click-fraud" element={<ClickFraudPage />} />
