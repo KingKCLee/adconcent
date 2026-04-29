@@ -862,7 +862,7 @@ export default function AdAutomation({ adAccountId }: AdAutomationProps) {
         </div>
       )}
 
-      {/* ====== 키워드별 개별 자동화 설정 (보라웨어식 테이블) ====== */}
+      {/* ====== 키워드별 개별 자동화 설정 (원클릭 순위 적용 테이블) ====== */}
       {adAccountId && <KeywordAutomationTable adAccountId={adAccountId} />}
 
       {/* ====== 그룹 기본값 저장 (fallback/신규 키워드용) ====== */}

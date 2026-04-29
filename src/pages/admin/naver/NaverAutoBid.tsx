@@ -92,7 +92,7 @@ export default function NaverAutoBid() {
     <div className="space-y-5">
       <div className="flex items-center gap-2">
         <span className="w-2.5 h-2.5 rounded-full bg-[#03C75A]" />
-        <h1 className="text-xl font-bold text-gray-900">네이버 자동입찰 (보라웨어 빠른입찰)</h1>
+        <h1 className="text-xl font-bold text-gray-900">네이버 자동입찰 (원클릭 순위 적용)</h1>
       </div>
       <p className="text-sm text-gray-500">
         키워드 행 클릭 → 1위/3위/5위 견적가 표시. <strong>1/3/5위 셀 클릭 → 즉시 PUT</strong>.

@@ -74,7 +74,7 @@ export default function NaverSettings() {
       </div>
 
       <div className="bg-white border border-gray-200 rounded-lg p-5 max-w-2xl">
-        <h2 className="font-bold text-sm mb-3">시간대별 multiplier (보라웨어 패턴)</h2>
+        <h2 className="font-bold text-sm mb-3">시간대별 multiplier (AdConcent 입찰 표준)</h2>
         <table className="w-full text-xs">
           <thead className="bg-gray-50">
             <tr>
