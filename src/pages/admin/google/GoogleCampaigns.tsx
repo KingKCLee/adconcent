@@ -13,8 +13,8 @@ export default function GoogleCampaigns() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    workerFetch<any>(`/api/google-ads/campaigns`)
-      .then((r) => setCampaigns(r.campaigns || r.data || []))
+    workerFetch<any>(`/api/admin/campaigns`)
+      .then((r) => setCampaigns(r.google || r.campaigns || r.data || []))
       .catch(() => setCampaigns([]))
       .finally(() => setLoading(false));
   }, []);
@@ -43,7 +43,7 @@ export default function GoogleCampaigns() {
             {loading ? (
               <tr><td colSpan={4} className="px-3 py-12 text-center text-gray-400">로드 중...</td></tr>
             ) : campaigns.length === 0 ? (
-              <tr><td colSpan={4} className="px-3 py-12 text-center text-gray-400">캠페인 없음 — Worker /api/google-ads/campaigns 응답 확인</td></tr>
+              <tr><td colSpan={4} className="px-3 py-12 text-center text-gray-400">캠페인 없음 — campaigns 테이블 + 매시 cron 동기화 확인</td></tr>
             ) : campaigns.map((c, i) => (
               <tr key={c.id || i} className="border-t border-gray-100">
                 <td className="px-3 py-2 font-mono text-xs">{c.id || '—'}</td>

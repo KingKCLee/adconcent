@@ -77,6 +77,7 @@ export default function App() {
           {/* /admin/* — 매체별 분리 (Phase Admin Media) */}
           <Route element={<AdminLayout />}>
             <Route path="/workspace" element={<Suspense fallback={<AdminFallback />}><AdminHome /></Suspense>} />
+            <Route path="/workspace/connect" element={<ConnectPage />} />
             <Route path="/workspace/campaigns" element={<Suspense fallback={<AdminFallback />}><AdminCampaigns /></Suspense>} />
             <Route path="/workspace/leads" element={<Suspense fallback={<AdminFallback />}><AdminLeads /></Suspense>} />
             <Route path="/workspace/sites" element={<Suspense fallback={<AdminFallback />}><AdminSites /></Suspense>} />
