@@ -15,62 +15,62 @@ const menuGroups = [
   {
     label: '통합 관리',
     items: [
-      { to: '/admin', icon: LayoutDashboard, label: '홈', color: '#94A3B8', end: true },
-      { to: '/admin/campaigns', icon: Megaphone, label: '캠페인', color: '#6366F1' },
-      { to: '/admin/leads', icon: Phone, label: '리드', color: '#F59E0B' },
-      { to: '/admin/sites', icon: Globe, label: '사이트', color: '#0EA5E9' },
+      { to: '/workspace', icon: LayoutDashboard, label: '홈', color: '#94A3B8', end: true },
+      { to: '/workspace/campaigns', icon: Megaphone, label: '캠페인', color: '#6366F1' },
+      { to: '/workspace/leads', icon: Phone, label: '리드', color: '#F59E0B' },
+      { to: '/workspace/sites', icon: Globe, label: '사이트', color: '#0EA5E9' },
     ],
   },
   {
     label: '네이버 광고',
     color: NAVER_GREEN,
     items: [
-      { to: '/admin/naver', icon: LayoutDashboard, label: '네이버 대시보드', color: NAVER_GREEN, end: true },
-      { to: '/admin/naver/autobid', icon: TrendingUp, label: '자동입찰', color: NAVER_GREEN },
-      { to: '/admin/naver/keywords', icon: Hash, label: '키워드', color: NAVER_GREEN },
-      { to: '/admin/naver/click-fraud', icon: ShieldAlert, label: '부정클릭', color: NAVER_GREEN },
-      { to: '/admin/naver/stats', icon: BarChart3, label: '통계', color: NAVER_GREEN },
-      { to: '/admin/naver/settings', icon: Settings, label: '설정', color: NAVER_GREEN },
+      { to: '/workspace/naver', icon: LayoutDashboard, label: '네이버 대시보드', color: NAVER_GREEN, end: true },
+      { to: '/workspace/naver/autobid', icon: TrendingUp, label: '자동입찰', color: NAVER_GREEN },
+      { to: '/workspace/naver/keywords', icon: Hash, label: '키워드', color: NAVER_GREEN },
+      { to: '/workspace/naver/click-fraud', icon: ShieldAlert, label: '부정클릭', color: NAVER_GREEN },
+      { to: '/workspace/naver/stats', icon: BarChart3, label: '통계', color: NAVER_GREEN },
+      { to: '/workspace/naver/settings', icon: Settings, label: '설정', color: NAVER_GREEN },
     ],
   },
   {
     label: '구글 광고',
     color: GOOGLE_BLUE,
     items: [
-      { to: '/admin/google', icon: LayoutDashboard, label: '구글 대시보드', color: GOOGLE_BLUE, end: true },
-      { to: '/admin/google/campaigns', icon: Megaphone, label: '캠페인 관리', color: GOOGLE_BLUE },
-      { to: '/admin/google/audit', icon: ShieldCheck, label: '봇/Placement', color: GOOGLE_BLUE },
-      { to: '/admin/google/stats', icon: BarChart3, label: '통계', color: GOOGLE_BLUE },
-      { to: '/admin/google/settings', icon: Settings, label: '설정', color: GOOGLE_BLUE },
+      { to: '/workspace/google', icon: LayoutDashboard, label: '구글 대시보드', color: GOOGLE_BLUE, end: true },
+      { to: '/workspace/google/campaigns', icon: Megaphone, label: '캠페인 관리', color: GOOGLE_BLUE },
+      { to: '/workspace/google/audit', icon: ShieldCheck, label: '봇/Placement', color: GOOGLE_BLUE },
+      { to: '/workspace/google/stats', icon: BarChart3, label: '통계', color: GOOGLE_BLUE },
+      { to: '/workspace/google/settings', icon: Settings, label: '설정', color: GOOGLE_BLUE },
     ],
   },
   {
     label: 'AI · 결제',
     items: [
-      { to: '/admin/ai', icon: Sparkles, label: 'AI 분석', color: '#7C3AED' },
-      { to: '/admin/billing', icon: CreditCard, label: '결제', color: '#DB2777' },
+      { to: '/workspace/ai', icon: Sparkles, label: 'AI 분석', color: '#7C3AED' },
+      { to: '/workspace/billing', icon: CreditCard, label: '결제', color: '#DB2777' },
     ],
   },
 ];
 
 const pageTitles: Record<string, string> = {
-  '/admin': '홈',
-  '/admin/campaigns': '캠페인',
-  '/admin/leads': '리드',
-  '/admin/sites': '사이트',
-  '/admin/naver': '네이버 대시보드',
-  '/admin/naver/autobid': '네이버 자동입찰',
-  '/admin/naver/keywords': '네이버 키워드',
-  '/admin/naver/click-fraud': '네이버 부정클릭',
-  '/admin/naver/stats': '네이버 통계',
-  '/admin/naver/settings': '네이버 설정',
-  '/admin/google': '구글 대시보드',
-  '/admin/google/campaigns': '구글 캠페인 관리',
-  '/admin/google/audit': '구글 봇/Placement',
-  '/admin/google/stats': '구글 통계',
-  '/admin/google/settings': '구글 설정',
-  '/admin/ai': 'AI 분석',
-  '/admin/billing': '결제',
+  '/workspace': '홈',
+  '/workspace/campaigns': '캠페인',
+  '/workspace/leads': '리드',
+  '/workspace/sites': '사이트',
+  '/workspace/naver': '네이버 대시보드',
+  '/workspace/naver/autobid': '네이버 자동입찰',
+  '/workspace/naver/keywords': '네이버 키워드',
+  '/workspace/naver/click-fraud': '네이버 부정클릭',
+  '/workspace/naver/stats': '네이버 통계',
+  '/workspace/naver/settings': '네이버 설정',
+  '/workspace/google': '구글 대시보드',
+  '/workspace/google/campaigns': '구글 캠페인 관리',
+  '/workspace/google/audit': '구글 봇/Placement',
+  '/workspace/google/stats': '구글 통계',
+  '/workspace/google/settings': '구글 설정',
+  '/workspace/ai': 'AI 분석',
+  '/workspace/billing': '결제',
 };
 
 const PLAN_BADGE_COLOR: Record<string, string> = {
@@ -161,7 +161,7 @@ function AdminLayoutInner() {
         </nav>
 
         <div className="px-3 py-3 border-t border-[#1E293B] space-y-0.5">
-          <NavLink to="/admin/billing" className={linkClass}>
+          <NavLink to="/workspace/billing" className={linkClass}>
             <CreditCard className="w-4 h-4 shrink-0 text-[#64748B]" />
             <span>결제/플랜</span>
             <span
