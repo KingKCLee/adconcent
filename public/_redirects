@@ -1,3 +1,4 @@
 /api/*  https://adconcent-worker.noble-kclee.workers.dev/api/:splat  200
+/naver/*  https://adconcent-worker.noble-kclee.workers.dev/naver/:splat  200
 /collect  https://adconcent-worker.noble-kclee.workers.dev/collect  200
 /*  /index.html  200
