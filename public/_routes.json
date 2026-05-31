@@ -1,8 +1,7 @@
 {
   "version": 1,
-  "include": ["/api/*"],
+  "include": ["/api/*", "/naver/*", "/admin/*"],
   "exclude": [
-    "/admin/*",
     "/dashboard/*",
     "/onboarding",
     "/workspace/*",
