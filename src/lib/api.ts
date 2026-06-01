@@ -1,10 +1,21 @@
+import { supabase } from './supabase';
+
 const WORKER_URL = import.meta.env.VITE_ADCONCENT_WORKER_URL;
 
 export async function workerFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  // 2026-06-01 보안 2단계 — 로그인 세션 토큰을 워커에 전송(워커가 Supabase JWT 검증).
+  //   비로그인이면 헤더 생략 → 공개 호출 무손상.
+  let authHeader: Record<string, string> = {};
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data?.session?.access_token;
+    if (token) authHeader = { Authorization: `Bearer ${token}` };
+  } catch { /* 세션 없으면 헤더 생략 */ }
   const res = await fetch(`${WORKER_URL}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...authHeader,
       ...options?.headers,
     },
   });
