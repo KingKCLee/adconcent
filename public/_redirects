@@ -2,7 +2,7 @@
 /naver/*  https://adconcent-worker.noble-kclee.workers.dev/naver/:splat  200
 /admin/*  https://adconcent-worker.noble-kclee.workers.dev/admin/:splat  200
 /collect  https://adconcent-worker.noble-kclee.workers.dev/collect  200
-# 2026-11-01 [개편 1단계] 옛 SPA 경로 폐쇄 — 정본(워커 /dashboard/*)으로 301. 반드시 `/* /index.html 200` 보다 앞.
+# 2026-11-01 [개편 1단계] 옛 SPA 경로 폐쇄 — 정본(워커 /dashboard/*)으로 301.
 /workspace/leads      /dashboard/leads      301
 /workspace/campaigns  /dashboard/campaigns  301
 /workspace/sites      /dashboard/sites      301
@@ -13,4 +13,11 @@
 /sales/leads          /dashboard/leads      301
 /sales/*              /dashboard            301
 /my-leads             /dashboard/leads      301
-/*  /index.html  200
+# 2026-11-01 [개편 1단계 마감] 「막을 목록」 → 「허용 목록」. 옛 SPA 번들 라우터의 공개 경로 5개만 SPA(index.html)로 응답한다.
+# 마지막 줄 `/* /index.html 200` 은 제거했다 — 목록에 없는 경로는 public/404.html(404) 로 떨어진다.
+# (Pages 는 최상위 404.html 이 있으면 SPA 폴백을 끄고 404 를 돌려준다. 검사: scripts/check-route-doors.mjs 의 무작위 경로 항목)
+/          /index.html  200
+/terms     /index.html  200
+/privacy   /index.html  200
+/signup    /index.html  200
+/onboarding /index.html 200
