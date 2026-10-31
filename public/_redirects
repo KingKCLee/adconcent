@@ -21,6 +21,4 @@
 /privacy   /          200
 /signup    /          200
 /onboarding /         200
-# /login 은 6번째 — 워커 존 라우트가 정확 일치(/login)라 쿼리 붙은 /login?next=… (워커 requireAuth 의 미로그인 리다이렉트 목적지)는 Pages 로 온다.
-# [측정:라이브 2026-11-01] /login?next=%2Fdashboard → Pages SPA 200(2175B). 이 줄이 없으면 대시보드 로그인 유도가 404 로 끊긴다.
-/login     /          200
+# (2026-11-01) 존 라우트가 /login* 으로 넓어져 쿼리 붙은 /login?next=… 도 워커가 받는다 — Pages 의 /login 줄은 제거(허용 목록은 다시 5경로).
