@@ -17,7 +17,10 @@
 # 마지막 줄 `/* /index.html 200` 은 제거했다 — 목록에 없는 경로는 public/404.html(404) 로 떨어진다.
 # (Pages 는 최상위 404.html 이 있으면 SPA 폴백을 끄고 404 를 돌려준다. 검사: scripts/check-route-doors.mjs 의 무작위 경로 항목)
 /          /index.html  200
-/terms     /index.html  200
-/privacy   /index.html  200
-/signup    /index.html  200
-/onboarding /index.html 200
+/terms     /          200
+/privacy   /          200
+/signup    /          200
+/onboarding /         200
+# /login 은 6번째 — 워커 존 라우트가 정확 일치(/login)라 쿼리 붙은 /login?next=… (워커 requireAuth 의 미로그인 리다이렉트 목적지)는 Pages 로 온다.
+# [측정:라이브 2026-11-01] /login?next=%2Fdashboard → Pages SPA 200(2175B). 이 줄이 없으면 대시보드 로그인 유도가 404 로 끊긴다.
+/login     /          200
