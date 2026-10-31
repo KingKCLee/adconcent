@@ -2,4 +2,15 @@
 /naver/*  https://adconcent-worker.noble-kclee.workers.dev/naver/:splat  200
 /admin/*  https://adconcent-worker.noble-kclee.workers.dev/admin/:splat  200
 /collect  https://adconcent-worker.noble-kclee.workers.dev/collect  200
+# 2026-11-01 [개편 1단계] 옛 SPA 경로 폐쇄 — 정본(워커 /dashboard/*)으로 301. 반드시 `/* /index.html 200` 보다 앞.
+/workspace/leads      /dashboard/leads      301
+/workspace/campaigns  /dashboard/campaigns  301
+/workspace/sites      /dashboard/sites      301
+/workspace            /dashboard            301
+/workspace/*          /dashboard            301
+/staff                /dashboard            301
+/staff/*              /dashboard            301
+/sales/leads          /dashboard/leads      301
+/sales/*              /dashboard            301
+/my-leads             /dashboard/leads      301
 /*  /index.html  200
